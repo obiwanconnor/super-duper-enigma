@@ -7,7 +7,10 @@ import { authMethodLabels } from "@/lib/labels";
 import { getOidcProviders } from "@/lib/oidc-providers";
 import { Flash } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
-import { addProduct, inviteClientUser, setUserActive, updateOrganization } from "../../actions";
+import { addProduct, inviteClientUser, setUserActive, updateOrganization, updateSlaTargets } from "../../actions";
+import { aiConfigured } from "@/lib/ai/assistant";
+import { PRIORITIES, targetsFor } from "@/lib/sla/sla";
+import { priorityLabels } from "@/lib/labels";
 
 export default async function OrganizationPage({
   params,
@@ -25,6 +28,7 @@ export default async function OrganizationPage({
     include: {
       products: { orderBy: { name: "asc" }, include: { _count: { select: { tickets: true, articles: true } } } },
       users: { orderBy: [{ active: "desc" }, { email: "asc" }] },
+      slaTargets: true,
     },
   });
   if (!org) notFound();
@@ -111,10 +115,59 @@ export default async function OrganizationPage({
               ))}
             </select>
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" name="aiEnabled" defaultChecked={org.aiEnabled} className="mt-1" />
+            <span>
+              Use AI first-line triage for this client
+              <span className="block text-slate-500">
+                Ticket text, conversation and screenshots are sent to Claude (Anthropic) to classify tickets, ask clarifying questions and draft replies.
+                {!aiConfigured() && " AI is not configured in this deployment (ANTHROPIC_API_KEY)."}
+              </span>
+            </span>
+          </label>
           <SubmitButton pendingText="Saving…">Save settings</SubmitButton>
         </form>
 
         <div className="space-y-8">
+          <section className="card p-5">
+            <h2 className="mb-1 font-semibold">SLA targets</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              In business hours (Mon–Fri 09:00–17:00 UK, excluding bank holidays; 1 day = 8 hours). The resolution clock pauses while a ticket is waiting on the client.
+            </p>
+            <form action={updateSlaTargets}>
+              <input type="hidden" name="organizationId" value={org.id} />
+              <table className="mb-3 w-full text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="pb-2 font-medium">Priority</th>
+                    <th className="pb-2 font-medium">First response (h)</th>
+                    <th className="pb-2 font-medium">Resolution (h)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRIORITIES.map((p) => {
+                    const t = targetsFor(p, org.slaTargets);
+                    return (
+                      <tr key={p}>
+                        <td className="py-1 pr-2">{priorityLabels[p]}</td>
+                        <td className="py-1 pr-2">
+                          <input name={`${p}.firstResponse`} type="number" step="0.25" min="0.25" required defaultValue={t.firstResponseMinutes / 60} className="input py-1" aria-label={`${priorityLabels[p]} first response hours`} />
+                        </td>
+                        <td className="py-1">
+                          <input name={`${p}.resolution`} type="number" step="0.25" min="0.25" required defaultValue={t.resolutionMinutes / 60} className="input py-1" aria-label={`${priorityLabels[p]} resolution hours`} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <SubmitButton className="btn-secondary" pendingText="Saving…">
+                Save targets
+              </SubmitButton>
+              {org.slaTargets.length === 0 && <span className="ml-3 text-xs text-slate-500">Showing the standard defaults.</span>}
+            </form>
+          </section>
+
           <section className="card p-5">
             <h2 className="mb-3 font-semibold">Products</h2>
             <ul className="mb-4 divide-y divide-slate-100 text-sm">

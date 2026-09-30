@@ -6,6 +6,8 @@ import { requireViewer } from "@/lib/session";
 import { OPEN_STATUSES } from "@/lib/labels";
 import { PriorityBadge, StatusBadge } from "@/components/badges";
 import { Time } from "@/components/time";
+import { SlaBadge } from "@/components/sla";
+import { loadTargets, slaFor } from "@/lib/sla/targets";
 
 export const metadata = { title: "Tickets" };
 
@@ -57,6 +59,9 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
     db.product.findMany({ where: productScope(viewer), orderBy: { name: "asc" }, select: { id: true, name: true, organization: { select: { name: true } } } }),
     staff ? db.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : Promise.resolve([]),
   ]);
+
+  const targets = staff ? await loadTargets(tickets.map((t) => t.organizationId)) : new Map();
+  const now = new Date();
 
   const views = [
     { key: "open", label: "Open" },
@@ -141,6 +146,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                 <th className="px-4 py-3">Subject</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Priority</th>
+                {staff && <th className="px-4 py-3">SLA</th>}
                 {staff && <th className="px-4 py-3">Assignee</th>}
                 <th className="px-4 py-3">Updated</th>
               </tr>
@@ -164,6 +170,11 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                   <td className="px-4 py-3">
                     <PriorityBadge priority={t.priority} />
                   </td>
+                  {staff && (
+                    <td className="px-4 py-3">
+                      <SlaCell sla={slaFor(t, targets, now)} />
+                    </td>
+                  )}
                   {staff && <td className="px-4 py-3 text-slate-600">{t.assignee ? (t.assignee.name ?? t.assignee.email) : "—"}</td>}
                   <td className="px-4 py-3 whitespace-nowrap text-slate-500">
                     <Time date={t.updatedAt} />
@@ -196,4 +207,11 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
       )}
     </div>
   );
+}
+
+/** Shows whichever clock matters now: first response until answered, then resolution. */
+function SlaCell({ sla }: { sla: ReturnType<typeof slaFor> }) {
+  // The first-response clock only has a due date while it is still waiting for a reply.
+  if (sla.firstResponse.dueAt) return <SlaBadge clock={sla.firstResponse} prefix="Reply" />;
+  return <SlaBadge clock={sla.resolution} prefix="Fix" />;
 }

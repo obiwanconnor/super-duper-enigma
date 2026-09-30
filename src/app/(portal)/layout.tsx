@@ -17,6 +17,7 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   const nav = [
+    ...(isStaff(viewer) ? [{ href: "/dashboard", label: "Dashboard" }] : []),
     { href: "/tickets", label: "Tickets" },
     { href: "/kb", label: "Knowledge base" },
     ...(isStaff(viewer) ? [{ href: "/admin/articles", label: "Articles" }] : []),

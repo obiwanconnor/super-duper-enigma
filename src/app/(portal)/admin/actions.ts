@@ -71,10 +71,40 @@ export async function updateOrganization(formData: FormData) {
       entraTenantId,
       googleHostedDomain: String(formData.get("googleHostedDomain") ?? "").trim().toLowerCase() || null,
       oidcProviderKey,
+      aiEnabled: formData.get("aiEnabled") === "on",
     },
   });
   revalidatePath(path);
   back(path, { notice: "Settings saved" });
+}
+
+/** Targets are entered in business hours (a business day is 8 hours). */
+export async function updateSlaTargets(formData: FormData) {
+  await requireAdmin();
+  const organizationId = String(formData.get("organizationId"));
+  const path = `/admin/organizations/${organizationId}`;
+  const hours = z.coerce.number().positive().max(2000);
+
+  const rows = [];
+  for (const priority of ["URGENT", "HIGH", "NORMAL", "LOW"] as const) {
+    const fr = hours.safeParse(formData.get(`${priority}.firstResponse`));
+    const res = hours.safeParse(formData.get(`${priority}.resolution`));
+    if (!fr.success || !res.success) back(path, { error: "SLA targets must be positive numbers of hours" });
+    if (fr.data > res.data) back(path, { error: "A first-response target can't be longer than the resolution target" });
+    rows.push({ priority, firstResponseMinutes: Math.round(fr.data * 60), resolutionMinutes: Math.round(res.data * 60) });
+  }
+
+  await db.$transaction(
+    rows.map((r) =>
+      db.slaTarget.upsert({
+        where: { organizationId_priority: { organizationId, priority: r.priority } },
+        create: { organizationId, ...r },
+        update: { firstResponseMinutes: r.firstResponseMinutes, resolutionMinutes: r.resolutionMinutes },
+      }),
+    ),
+  );
+  revalidatePath(path);
+  back(path, { notice: "SLA targets saved" });
 }
 
 export async function addProduct(formData: FormData) {

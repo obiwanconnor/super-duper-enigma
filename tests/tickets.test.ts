@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolvedAtFor, statusAfterClientReply } from "@/lib/tickets";
+import { countsAsResponse, statusAfterClientReply } from "@/lib/tickets";
 import { ticketScope, commentScope, canViewTicket } from "@/lib/access";
 import { parseDomains, slugify } from "@/lib/slug";
 
@@ -11,11 +11,12 @@ describe("ticket status rules", () => {
     expect(statusAfterClientReply("IN_PROGRESS")).toBe("IN_PROGRESS");
   });
 
-  it("tracks when a ticket was resolved", () => {
-    const earlier = new Date("2026-01-01");
-    expect(resolvedAtFor("RESOLVED", earlier)).toBe(earlier);
-    expect(resolvedAtFor("CLOSED", null)).toBeInstanceOf(Date);
-    expect(resolvedAtFor("OPEN", earlier)).toBeNull();
+  it("counts public staff and AI replies as the first response", () => {
+    const v = (role: "CLIENT" | "AGENT" | "AI") => ({ id: "x", role, organizationId: null });
+    expect(countsAsResponse(v("AGENT"), false)).toBe(true);
+    expect(countsAsResponse(v("AI"), false)).toBe(true);
+    expect(countsAsResponse(v("AGENT"), true)).toBe(false);
+    expect(countsAsResponse(v("CLIENT"), false)).toBe(false);
   });
 });
 

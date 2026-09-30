@@ -126,3 +126,23 @@ export async function notifyStatusChanged(ticketId: string, status: TicketStatus
 
   await deliver([t.requester], t, `Status: ${statusLabels[status]}`, body);
 }
+
+export async function notifySlaBreach(ticketId: string, clock: "firstResponse" | "resolution") {
+  const t = await db.ticket.findUnique({ where: { id: ticketId }, include: { organization: { select: { name: true } } } });
+  if (!t) return;
+  const what = clock === "firstResponse" ? "first-response" : "resolution";
+  const url = appUrl(`/tickets/${t.number}`);
+  const recipients = await staffRecipients(t.assigneeId);
+  const { text, html } = renderEmail({
+    heading: `SLA breached: ${what} target`,
+    bodyText: `Ticket #${t.number} for ${t.organization.name} (${t.priority.toLowerCase()} priority) has passed its ${what} target.\n\n${t.subject}`,
+    action: { label: `Open ticket #${t.number}`, url },
+  });
+  await Promise.all(
+    recipients.map((r) =>
+      sendEmail({ to: r.email, subject: `[SLA breach] #${t.number} ${t.subject}`, text, html }).catch((err) =>
+        console.error(`Failed to send SLA alert to ${r.email}`, err),
+      ),
+    ),
+  );
+}

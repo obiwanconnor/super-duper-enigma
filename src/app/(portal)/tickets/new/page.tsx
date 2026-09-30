@@ -4,6 +4,7 @@ import { isStaff, productScope } from "@/lib/access";
 import { requireViewer } from "@/lib/session";
 import { priorityLabels, typeLabels } from "@/lib/labels";
 import { SubmitButton } from "@/components/submit-button";
+import { FileInput } from "@/components/attachments";
 import { createTicket } from "../actions";
 
 export const metadata = { title: "New ticket" };
@@ -95,6 +96,11 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
             className="input"
             placeholder={"What happened? What did you expect to happen?\nSteps to reproduce, affected users, links, error messages…"}
           />
+        </div>
+
+        <div>
+          <span className="label">Attachments</span>
+          <FileInput />
         </div>
 
         <div className="flex justify-end gap-2">

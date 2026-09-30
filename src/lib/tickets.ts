@@ -1,6 +1,7 @@
-import type { CommentSource, TicketStatus } from "@prisma/client";
+import type { CommentSource, Prisma, TicketStatus } from "@prisma/client";
 import { db } from "./db";
-import { isStaff, type Viewer } from "./access";
+import type { Viewer } from "./access";
+import { statusChangeData } from "./sla/sla";
 
 /** A reply from the client puts the ticket back in the team's queue. */
 export function statusAfterClientReply(status: TicketStatus): TicketStatus {
@@ -14,9 +15,18 @@ export function statusAfterClientReply(status: TicketStatus): TicketStatus {
   }
 }
 
-export function resolvedAtFor(status: TicketStatus, previous: Date | null): Date | null {
-  if (status === "RESOLVED" || status === "CLOSED") return previous ?? new Date();
-  return null;
+/** Whether a comment counts as the first response for SLA purposes. */
+export function countsAsResponse(author: Viewer, internal: boolean): boolean {
+  return !internal && author.role !== "CLIENT";
+}
+
+type Tx = Prisma.TransactionClient;
+
+/** Changes a ticket's status, keeping SLA pause accounting consistent. */
+export async function setTicketStatus(tx: Tx, ticketId: string, status: TicketStatus, now = new Date()) {
+  const ticket = await tx.ticket.findUniqueOrThrow({ where: { id: ticketId } });
+  if (ticket.status === status) return ticket;
+  return tx.ticket.update({ where: { id: ticketId }, data: statusChangeData(ticket, status, now) });
 }
 
 /**
@@ -29,8 +39,11 @@ export async function addComment(opts: {
   body: string;
   internal: boolean;
   source: CommentSource;
+  /** Optionally move the ticket to this status (staff and AI only). */
+  setStatus?: TicketStatus;
 }) {
-  const internal = opts.internal && isStaff(opts.author);
+  const internal = opts.internal && opts.author.role !== "CLIENT";
+  const now = new Date();
 
   return db.$transaction(async (tx) => {
     const comment = await tx.comment.create({
@@ -38,16 +51,17 @@ export async function addComment(opts: {
     });
 
     const ticket = await tx.ticket.findUniqueOrThrow({ where: { id: opts.ticketId } });
-    if (!isStaff(opts.author)) {
-      const status = statusAfterClientReply(ticket.status);
-      await tx.ticket.update({
-        where: { id: ticket.id },
-        data: { status, resolvedAt: resolvedAtFor(status, ticket.resolvedAt) },
-      });
-    } else {
-      // Touch updatedAt so the ticket rises in the list.
-      await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
-    }
+    const nextStatus = opts.author.role === "CLIENT" ? statusAfterClientReply(ticket.status) : (opts.setStatus ?? ticket.status);
+
+    await tx.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        ...(nextStatus !== ticket.status ? statusChangeData(ticket, nextStatus, now) : {}),
+        ...(!ticket.firstRespondedAt && countsAsResponse(opts.author, internal) ? { firstRespondedAt: now } : {}),
+        // Touch updatedAt so the ticket rises in the list.
+        updatedAt: now,
+      },
+    });
     return comment;
   });
 }

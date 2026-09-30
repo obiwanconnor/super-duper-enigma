@@ -97,3 +97,10 @@ describe("loginOptionsFor", () => {
     ]);
   });
 });
+
+describe("system users", () => {
+  it("never lets the AI assistant sign in", () => {
+    const ai: KnownUser = { role: "AI", active: true, organization: null };
+    expect(decideSignIn({ providerId: "sendgrid", user: ai, domainOrg: null, staff }).ok).toBe(false);
+  });
+});

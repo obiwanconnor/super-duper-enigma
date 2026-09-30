@@ -11,6 +11,7 @@ enum Role {
   CLIENT // stakeholder at a client organisation
   AGENT // consultancy support staff
   ADMIN // consultancy admin: manages organisations, users, products
+  AI // the AI triage assistant (system user, can never sign in)
 }
 
 // How members of an organisation are allowed to sign in.
@@ -46,29 +47,60 @@ enum TicketType {
 enum CommentSource {
   WEB
   EMAIL
+  AI
+}
+
+enum AiStatus {
+  SKIPPED // AI disabled for this client or deployment
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum DraftStatus {
+  PENDING
+  SENT
+  DISCARDED
+  SUPERSEDED
 }
 
 model Organization {
-  id           String       @id @default(cuid())
-  name         String
-  slug         String       @unique
+  id                 String       @id @default(cuid())
+  name               String
+  slug               String       @unique
   // Email domains owned by this client, e.g. ["acme.com"]. Used to route logins.
-  emailDomains String[]
+  emailDomains       String[]
   // Anyone with a matching email domain may sign in and is added automatically.
   // When false, users must be invited individually.
-  autoJoin     Boolean      @default(false)
-  authMethods  AuthMethod[] @default([MAGIC_LINK])
+  autoJoin           Boolean      @default(false)
+  authMethods        AuthMethod[] @default([MAGIC_LINK])
   // Optional restrictions for SSO sign-ins.
-  entraTenantId String?
+  entraTenantId      String?
   googleHostedDomain String?
   // Key of the entry in OIDC_PROVIDERS used by this organisation.
-  oidcProviderKey String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  oidcProviderKey    String?
+  // Whether ticket content may be sent to the AI assistant for triage.
+  aiEnabled          Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  users    User[]
-  products Product[]
-  tickets  Ticket[]
+  users      User[]
+  products   Product[]
+  tickets    Ticket[]
+  slaTargets SlaTarget[]
+}
+
+// Contracted targets per priority, in business minutes (see src/lib/sla).
+model SlaTarget {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priority             TicketPriority
+  firstResponseMinutes Int
+  resolutionMinutes    Int
+
+  @@unique([organizationId, priority])
 }
 
 model Product {
@@ -99,12 +131,14 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  accounts        Account[]
-  sessions        Session[]
-  requested       Ticket[]  @relation("requester")
-  assigned        Ticket[]  @relation("assignee")
-  comments        Comment[]
-  articles        Article[]
+  accounts       Account[]
+  sessions       Session[]
+  requested      Ticket[]     @relation("requester")
+  assigned       Ticket[]     @relation("assignee")
+  comments       Comment[]
+  articles       Article[]
+  attachments    Attachment[]
+  resolvedDrafts AiDraft[]
 }
 
 model Ticket {
@@ -127,9 +161,29 @@ model Ticket {
   updatedAt      DateTime       @updatedAt
   resolvedAt     DateTime?
 
-  comments Comment[]
+  // SLA tracking. The clock pauses while waiting on the client or resolved.
+  firstRespondedAt              DateTime?
+  pausedAt                      DateTime?
+  pausedBusinessMinutes         Int       @default(0)
+  firstResponseBreachNotifiedAt DateTime?
+  resolutionBreachNotifiedAt    DateTime?
+
+  // AI triage
+  aiStatus            AiStatus        @default(SKIPPED)
+  aiAttempts          Int             @default(0)
+  aiUpdatedAt         DateTime?
+  aiSummary           String?
+  aiSuggestedType     TicketType?
+  aiSuggestedPriority TicketPriority?
+  aiPriorityReason    String?
+  aiLikelyIncident    Boolean         @default(false)
+
+  comments    Comment[]
+  attachments Attachment[]
+  drafts      AiDraft[]
 
   @@index([organizationId, status])
+  @@index([aiStatus])
   @@index([assigneeId, status])
 }
 
@@ -145,7 +199,44 @@ model Comment {
   author    User          @relation(fields: [authorId], references: [id])
   createdAt DateTime      @default(now())
 
+  attachments Attachment[]
+
   @@index([ticketId, createdAt])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  ticketId     String
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  // Null when attached to the ticket's original description.
+  commentId    String?
+  comment      Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  filename     String
+  contentType  String
+  size         Int
+  storageKey   String
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+// A reply suggested by the AI assistant, sent only once staff approve it.
+model AiDraft {
+  id             String      @id @default(cuid())
+  ticketId       String
+  ticket         Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body           String
+  kbArticleSlugs String[]
+  confidence     String
+  status         DraftStatus @default(PENDING)
+  resolvedById   String?
+  resolvedBy     User?       @relation(fields: [resolvedById], references: [id])
+  resolvedAt     DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([ticketId, status])
 }
 
 model Article {

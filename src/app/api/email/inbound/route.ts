@@ -6,6 +6,8 @@ import { parseReplyAddress } from "@/lib/email/reply-token";
 import { extractEmailAddress, extractReplyText } from "@/lib/email/parse-reply";
 import { addComment } from "@/lib/tickets";
 import { notifyCommentAdded } from "@/lib/notifications";
+import { runReplyDraft } from "@/lib/ai/assistant";
+import { MAX_FILES, sanitiseFilename, saveAttachments, type IncomingFile } from "@/lib/attachments";
 
 /**
  * SendGrid Inbound Parse webhook. Configure the destination URL as
@@ -23,6 +25,35 @@ function secretMatches(given: string | null): boolean {
   const a = Buffer.from(given);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+const MAX_EMAIL_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * SendGrid sends attachments as attachment1..N with metadata in
+ * "attachment-info". Inline parts (signature logos etc.) carry a content-id
+ * and are skipped.
+ */
+async function emailAttachments(form: FormData): Promise<IncomingFile[]> {
+  let info: Record<string, { filename?: string; name?: string; type?: string; "content-id"?: string }> = {};
+  try {
+    info = JSON.parse(String(form.get("attachment-info") ?? "{}"));
+  } catch {
+    info = {};
+  }
+  const files: IncomingFile[] = [];
+  for (const [field, meta] of Object.entries(info)) {
+    if (meta["content-id"]) continue;
+    const file = form.get(field);
+    if (!file || typeof file === "string" || file.size === 0 || file.size > MAX_EMAIL_ATTACHMENT_BYTES) continue;
+    files.push({
+      filename: sanitiseFilename(meta.filename ?? meta.name ?? file.name),
+      contentType: meta.type || file.type || "application/octet-stream",
+      data: Buffer.from(await file.arrayBuffer()),
+    });
+    if (files.length >= MAX_FILES) break;
+  }
+  return files;
 }
 
 function htmlToText(html: string): string {
@@ -75,10 +106,15 @@ export async function POST(req: Request) {
 
   const raw = field("text") || htmlToText(field("html"));
   const body = extractReplyText(raw).slice(0, 20_000);
-  if (!body) return NextResponse.json({ ok: true, ignored: "empty" });
+  const files = await emailAttachments(form);
+  if (!body && files.length === 0) return NextResponse.json({ ok: true, ignored: "empty" });
 
-  const comment = await addComment({ ticketId: ticket.id, author: viewer, body, internal: false, source: "EMAIL" });
-  after(() => notifyCommentAdded(comment.id));
+  const comment = await addComment({ ticketId: ticket.id, author: viewer, body: body || "_(attachment)_", internal: false, source: "EMAIL" });
+  await saveAttachments({ ticketId: ticket.id, commentId: comment.id, uploadedById: user.id, files });
+  after(async () => {
+    await notifyCommentAdded(comment.id);
+    if (user.role === "CLIENT") await runReplyDraft(ticket.id);
+  });
 
   return NextResponse.json({ ok: true, commentId: comment.id });
 }

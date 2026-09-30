@@ -172,6 +172,8 @@ export function decideSignIn(attempt: SignInAttempt): SignInDecision {
   if (!method) return { ok: false, reason: "unknown-provider" };
 
   if (user && !user.active) return { ok: false, reason: "deactivated" };
+  // The AI assistant is a system user and can never sign in.
+  if (user?.role === "AI") return { ok: false, reason: "not-invited" };
 
   if (user && isStaffRole(user.role)) {
     if (method === "OIDC") return { ok: false, reason: "method-not-allowed" };

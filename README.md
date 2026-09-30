@@ -22,10 +22,11 @@ An organisation has users and one or more **products**. Every ticket and article
 ## Local development
 
 ```bash
-cp .env.example .env          # set DATABASE_URL and AUTH_SECRET (npx auth secret)
+cp .env.example .env          # set DATABASE_URL and AUTH_SECRET (npx auth secret);
+                              # set APP_URL=http://localhost:3000 and remove AUTH_URL
 npm install
 npm run db:migrate            # create the schema
-SEED_ADMIN_EMAIL=you@s6a.example SEED_DEMO=1 npm run db:seed
+SEED_ADMIN_EMAIL=you@s6a.io SEED_DEMO=1 npm run db:seed
 npm run dev
 ```
 
@@ -35,10 +36,21 @@ Run `npm test` for unit tests and `npm run typecheck` for types.
 
 ## Deploying to Vercel
 
+The live portal runs at **https://support.s6a.io**.
+
 1. Create a Postgres database (Neon, Supabase or Vercel Marketplace Postgres) and set `DATABASE_URL`.
 2. Import the repo into Vercel. The `vercel-build` script runs `prisma migrate deploy` before `next build`.
-3. Set the environment variables from `.env.example`. At minimum set `DATABASE_URL`, `AUTH_SECRET`, `APP_URL`, `SENDGRID_API_KEY`, `EMAIL_FROM`, `REPLY_DOMAIN` and `INBOUND_EMAIL_SECRET`.
-4. Create the first admin once, against the production database: `SEED_ADMIN_EMAIL=you@s6a.example npm run db:seed`.
+   Under **Settings → Domains**, add `support.s6a.io` and redirect the `*.vercel.app` production domain to it. Sign-in cookies and links are tied to the host people arrive on, so there should be only one.
+3. Set the environment variables from `.env.example`. At minimum set `DATABASE_URL`, `AUTH_SECRET`, `APP_URL` and `AUTH_URL` (both `https://support.s6a.io`), `SENDGRID_API_KEY`, `EMAIL_FROM`, `REPLY_DOMAIN` and `INBOUND_EMAIL_SECRET`.
+4. Create the first admin once, against the production database: `SEED_ADMIN_EMAIL=you@s6a.io npm run db:seed`.
+
+### DNS records for s6a.io
+
+| Host | Type | Value | Purpose |
+|---|---|---|---|
+| `support` | CNAME | `cname.vercel-dns.com` (Vercel shows the exact value) | The portal |
+| `reply.support` | MX (priority 10) | `mx.sendgrid.net` | Inbound email replies |
+| SendGrid domain authentication | CNAME ×3 | As shown by SendGrid for `s6a.io` | SPF/DKIM so mail from `support@s6a.io` is delivered |
 
 ## SendGrid
 
@@ -46,9 +58,9 @@ Run `npm test` for unit tests and `npm run typecheck` for types.
 
 **Reply by email:** every notification carries a personal `Reply-To` address of the form `ticket+<number>.<userId>.<signature>@REPLY_DOMAIN`. The signature is an HMAC over the ticket and the recipient, keyed on `AUTH_SECRET`. A reply is accepted only when the signature is valid, the sender matches the recipient it was issued to, and that person can still see the ticket. Quoted history is stripped.
 
-1. Choose a subdomain for replies, such as `reply.support.s6a.example`, and point its MX record at `mx.sendgrid.net`.
+1. Replies go to the subdomain `reply.support.s6a.io`. Point its MX record at `mx.sendgrid.net`. Mail for the rest of `s6a.io` is unaffected.
 2. In SendGrid, go to **Settings → Inbound Parse** and add that host with this destination URL:
-   `https://<your-app>/api/email/inbound?secret=<INBOUND_EMAIL_SECRET>`
+   `https://support.s6a.io/api/email/inbound?secret=<INBOUND_EMAIL_SECRET>`
    Leave "POST the raw, full MIME message" unticked.
 3. Set `REPLY_DOMAIN` to the same subdomain.
 
@@ -67,12 +79,12 @@ On the login page people enter their email first and then see only the methods t
 SSO accounts are linked to invited users by email address, so the identity provider must be trusted to assert that address:
 
 ### Microsoft Entra ID
-Register one **multi-tenant** app in your own tenant ("Accounts in any organizational directory"), with the redirect URI `https://<your-app>/api/auth/callback/microsoft-entra-id`. Set `AUTH_MICROSOFT_ENTRA_ID_ID` and `AUTH_MICROSOFT_ENTRA_ID_SECRET`.
+Register one **multi-tenant** app in your own tenant ("Accounts in any organizational directory"), with the redirect URI `https://support.s6a.io/api/auth/callback/microsoft-entra-id`. Set `AUTH_MICROSOFT_ENTRA_ID_ID` and `AUTH_MICROSOFT_ENTRA_ID_SECRET`.
 
 For each client, enter their **Entra tenant ID**. Microsoft sign-in is refused without it, because the Entra `email` claim isn't verified by Microsoft. Set `STAFF_ENTRA_TENANT_ID` to your own tenant so staff can use Microsoft too. A client's Entra admin may need to grant consent to the app for their tenant.
 
 ### Google Workspace
-Create an OAuth client (type: Web) with the redirect URI `https://<your-app>/api/auth/callback/google`, then set `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. Only verified Google emails are accepted. Optionally pin each client to its Workspace domain (the `hd` claim). `STAFF_GOOGLE_HOSTED_DOMAIN` does the same for staff.
+Create an OAuth client (type: Web) with the redirect URI `https://support.s6a.io/api/auth/callback/google`, then set `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. Only verified Google emails are accepted. Optionally pin each client to its Workspace domain (the `hd` claim). `STAFF_GOOGLE_HOSTED_DOMAIN` does the same for staff.
 
 ### Generic OIDC (Okta, Auth0, Keycloak, …) and SAML
 Add an entry to `OIDC_PROVIDERS` (a JSON array) for each client IdP:
@@ -81,7 +93,7 @@ Add an entry to `OIDC_PROVIDERS` (a JSON array) for each client IdP:
 [{"key":"acme-okta","name":"Acme Okta","issuer":"https://acme.okta.com","clientId":"…","clientSecret":"…"}]
 ```
 
-The redirect URI is `https://<your-app>/api/auth/callback/oidc-<key>`. Then choose that provider on the client's settings page. A user can only sign in through their own organisation's provider.
+The redirect URI is `https://support.s6a.io/api/auth/callback/oidc-<key>`. Then choose that provider on the client's settings page. A user can only sign in through their own organisation's provider.
 
 For **SAML-only** identity providers, run a SAML-to-OIDC bridge such as [BoxyHQ SAML Jackson](https://boxyhq.com/docs/jackson/overview) and register the bridge as an OIDC provider above.
 

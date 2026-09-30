@@ -1,6 +1,6 @@
 /**
  * Creates the first admin, plus optional demo data.
- *   SEED_ADMIN_EMAIL=you@s6a.example npm run db:seed
+ *   SEED_ADMIN_EMAIL=you@s6a.io npm run db:seed
  *   SEED_DEMO=1 SEED_ADMIN_EMAIL=... npm run db:seed
  */
 import { PrismaClient } from "@prisma/client";

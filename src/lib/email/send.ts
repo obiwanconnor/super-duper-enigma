@@ -17,7 +17,7 @@ function parseFrom(from: string): { email: string; name?: string } {
  */
 export async function sendEmail(msg: OutgoingEmail): Promise<void> {
   const apiKey = process.env.SENDGRID_API_KEY;
-  const from = parseFrom(process.env.EMAIL_FROM ?? "s6a Support <support@example.com>");
+  const from = parseFrom(process.env.EMAIL_FROM ?? "s6a Support <support@s6a.io>");
 
   if (!apiKey) {
     console.info(

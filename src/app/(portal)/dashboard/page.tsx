@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/session";
+import { isAdmin } from "@/lib/access";
+import { isPastRetention } from "@/lib/retention";
 import { OPEN_STATUSES } from "@/lib/labels";
 import { loadTargets, slaFor } from "@/lib/sla/targets";
 import { formatBusinessDuration } from "@/lib/sla/business-time";
@@ -26,15 +28,15 @@ const slaFields = {
 } as const;
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  await requireStaff();
+  const viewer = await requireStaff();
   const days = (await searchParams).days === "90" ? 90 : 30;
   const now = new Date();
   const since = new Date(now.getTime() - days * 24 * 60 * 60_000);
   const months = lastMonths(6, now);
   const monthsStart = new Date(`${months[0]}-01T00:00:00Z`);
 
-  const [orgs, openTickets, pendingDrafts, recent, created, resolved] = await Promise.all([
-    db.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  const [orgs, openTickets, pendingDrafts, recent, created, resolved, ratings] = await Promise.all([
+    db.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, contractEndsAt: true } }),
     db.ticket.findMany({ where: { status: { in: OPEN_STATUSES } }, select: { ...slaFields, organization: { select: { name: true } } } }),
     db.aiDraft.count({ where: { status: "PENDING", ticket: { status: { in: OPEN_STATUSES } } } }),
     // Tickets whose response or resolution happened within the period.
@@ -48,7 +50,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     db.$queryRaw<{ org: string; month: string; n: bigint }[]>`
       SELECT "organizationId" AS org, to_char(date_trunc('month', "resolvedAt" AT TIME ZONE 'Europe/London'), 'YYYY-MM') AS month, count(*) AS n
       FROM "Ticket" WHERE "resolvedAt" >= ${monthsStart} GROUP BY 1, 2`,
+    db.satisfactionResponse.findMany({
+      where: { updatedAt: { gte: since } },
+      select: { rating: true, ticket: { select: { organizationId: true } } },
+    }),
   ]);
+  const retentionDue = isAdmin(viewer) ? orgs.filter((o) => isPastRetention(o.contractEndsAt)) : [];
+
+  // ---- Satisfaction ---------------------------------------------------------
+  const csat = new Map<string, { good: number; total: number }>();
+  const csatAll = { good: 0, okay: 0, poor: 0, total: 0 };
+  for (const r of ratings) {
+    const c = csat.get(r.ticket.organizationId) ?? { good: 0, total: 0 };
+    c.total++;
+    if (r.rating === "GOOD") c.good++;
+    csat.set(r.ticket.organizationId, c);
+    csatAll.total++;
+    if (r.rating === "GOOD") csatAll.good++;
+    if (r.rating === "OKAY") csatAll.okay++;
+    if (r.rating === "POOR") csatAll.poor++;
+  }
 
   const targets = await loadTargets(orgs.map((o) => o.id));
 
@@ -110,8 +131,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {retentionDue.length > 0 && (
+        <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <span aria-hidden="true">! </span>
+          {retentionDue.length} {retentionDue.length === 1 ? "client is" : "clients are"} past the data retention period.{" "}
+          <Link href="/admin/retention" className="link">
+            Review data retention
+          </Link>
+        </p>
+      )}
+
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Queue health</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Queue health</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Tile label="Open" value={open.length} href="/tickets?view=open" />
           <Tile label="Unassigned" value={open.filter((t) => !t.assigneeId).length} href="/tickets?view=open&assignee=unassigned" />
@@ -122,20 +153,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <div className="card mt-4 overflow-x-auto">
-          <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold">Needs attention</div>
+          <h3 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold">Needs attention</h3>
           {attention.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-500">Nothing breached or at risk. 🎉</p>
+            <p className="px-4 py-6 text-center text-sm text-slate-600">Nothing breached or at risk.</p>
           ) : (
             <table className="w-full text-sm">
+              <caption className="sr-only">Tickets breached or at risk, most urgent first</caption>
+              <thead className="sr-only">
+                <tr>
+                  <th scope="col">Number</th>
+                  <th scope="col">Ticket</th>
+                  <th scope="col">Priority</th>
+                  <th scope="col">SLA</th>
+                </tr>
+              </thead>
               <tbody className="divide-y divide-slate-100">
                 {attention.map((t) => (
                   <tr key={t.id}>
-                    <td className="px-4 py-2 text-slate-500">#{t.number}</td>
+                    <td className="px-4 py-2 text-slate-600">#{t.number}</td>
                     <td className="px-4 py-2">
                       <Link href={`/tickets/${t.number}`} className="font-medium hover:text-brand-700">
                         {t.subject}
                       </Link>
-                      <div className="text-xs text-slate-500">{t.organization.name}</div>
+                      <div className="text-xs text-slate-600">{t.organization.name}</div>
                     </td>
                     <td className="px-4 py-2">
                       <PriorityBadge priority={t.priority} />
@@ -152,27 +192,34 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Response times · last {days} days</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Response times · last {days} days</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Tile label="Median first response" value={fmt(median(overall.frTimes))} sub="business hours" />
           <Tile label="First response within SLA" value={pct(percent(overall.frMet, overall.frTotal))} sub={`${overall.frTotal} tickets`} />
           <Tile label="Median resolution" value={fmt(median(overall.resTimes))} sub="business hours, excl. paused" />
           <Tile label="Resolved within SLA" value={pct(percent(overall.resMet, overall.resTotal))} sub={`${overall.resTotal} tickets`} />
+          <Tile
+            label="Rated good"
+            value={pct(percent(csatAll.good, csatAll.total))}
+            sub={csatAll.total ? `${csatAll.good} good · ${csatAll.okay} okay · ${csatAll.poor} poor` : "No ratings yet"}
+          />
         </div>
         <div className="card mt-4 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-4 py-3">Client</th>
-                <th className="px-4 py-3 text-right">Median first response</th>
-                <th className="px-4 py-3 text-right">Within SLA</th>
-                <th className="px-4 py-3 text-right">Median resolution</th>
-                <th className="px-4 py-3 text-right">Within SLA</th>
+                <th scope="col" className="px-4 py-3">Client</th>
+                <th scope="col" className="px-4 py-3 text-right">Median first response</th>
+                <th scope="col" className="px-4 py-3 text-right">Within SLA</th>
+                <th scope="col" className="px-4 py-3 text-right">Median resolution</th>
+                <th scope="col" className="px-4 py-3 text-right">Within SLA</th>
+                <th scope="col" className="px-4 py-3 text-right">Rated good</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {orgs.map((o) => {
                 const a = byOrg.get(o.id) ?? empty();
+                const c = csat.get(o.id);
                 return (
                   <tr key={o.id}>
                     <td className="px-4 py-2 font-medium">{o.name}</td>
@@ -184,6 +231,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     <td className="px-4 py-2 text-right tabular-nums">
                       <Compliance value={percent(a.resMet, a.resTotal)} n={a.resTotal} />
                     </td>
+                    <td className="px-4 py-2 text-right tabular-nums">{c ? `${percent(c.good, c.total)}% (${c.total})` : "—"}</td>
                   </tr>
                 );
               })}
@@ -193,18 +241,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Volumes by client · created / resolved per month</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Volumes by client · created / resolved per month</h2>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-4 py-3">Client</th>
+                <th scope="col" className="px-4 py-3">Client</th>
                 {months.map((m) => (
-                  <th key={m} className="px-4 py-3 text-right">
+                  <th key={m} scope="col" className="px-4 py-3 text-right">
                     {monthLabel(m)}
                   </th>
                 ))}
-                <th className="px-4 py-3 text-right">Total</th>
+                <th scope="col" className="px-4 py-3 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -249,7 +297,7 @@ function Tile({ label, value, sub, href, status }: { label: string; value: numbe
   const s = status ? statusStyle[status] : null;
   const body = (
     <div className="card h-full p-4">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="text-xs font-medium text-slate-600">{label}</div>
       <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">{value}</div>
       <div className="mt-1 flex flex-wrap gap-x-2 text-xs">
         {s && (
@@ -257,7 +305,7 @@ function Tile({ label, value, sub, href, status }: { label: string; value: numbe
             <span aria-hidden>{s.icon}</span> {s.label}
           </span>
         )}
-        {sub && <span className="text-slate-500">{sub}</span>}
+        {sub && <span className="text-slate-600">{sub}</span>}
       </div>
     </div>
   );
@@ -271,7 +319,7 @@ function Tile({ label, value, sub, href, status }: { label: string; value: numbe
 }
 
 function Compliance({ value, n }: { value: number | null; n: number }) {
-  if (value === null) return <span className="text-slate-400">—</span>;
+  if (value === null) return <span className="text-slate-600">—</span>;
   const low = value < 90;
   return (
     <span className={low ? "font-medium text-red-700" : "text-slate-800"} title={`${n} tickets`}>
@@ -282,11 +330,22 @@ function Compliance({ value, n }: { value: number | null; n: number }) {
 }
 
 function VolumeCell({ created, resolved }: { created: number; resolved: number }) {
-  if (!created && !resolved) return <span className="text-slate-300">·</span>;
+  if (!created && !resolved)
+    return (
+      <span className="text-slate-600">
+        <span aria-hidden="true">·</span>
+        <span className="sr-only">none</span>
+      </span>
+    );
   return (
     <span>
-      {created}
-      <span className="text-slate-400"> / {resolved}</span>
+      <span aria-hidden="true">
+        {created}
+        <span className="text-slate-600"> / {resolved}</span>
+      </span>
+      <span className="sr-only">
+        {created} created, {resolved} resolved
+      </span>
     </span>
   );
 }

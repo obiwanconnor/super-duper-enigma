@@ -5,6 +5,7 @@ import { sendEmail } from "./email/send";
 import { renderEmail } from "./email/templates";
 import { replyAddress } from "./email/reply-token";
 import { statusLabels } from "./labels";
+import { RATINGS, ratingLabels, surveyToken } from "./survey";
 
 type Recipient = { id: string; email: string; name: string | null };
 
@@ -15,11 +16,14 @@ function replyToFor(ticketNumber: number, userId: string): string | undefined {
   return replyAddress(ticketNumber, userId, secret, domain);
 }
 
+type Links = { heading: string; items: { label: string; url: string }[] };
+
 async function deliver(
   recipients: Recipient[],
   ticket: { number: number; subject: string },
   heading: string,
   bodyText: string,
+  linksFor?: (r: Recipient) => Links | undefined,
 ) {
   const url = appUrl(`/tickets/${ticket.number}`);
   const unique = new Map(recipients.map((r) => [r.id, r]));
@@ -31,6 +35,7 @@ async function deliver(
         bodyText,
         action: { label: `View ticket #${ticket.number}`, url },
         replyable: !!replyTo,
+        links: linksFor?.(r),
       });
       try {
         await sendEmail({ to: r.email, subject: `[#${ticket.number}] ${ticket.subject}`, text, html, replyTo });
@@ -51,13 +56,17 @@ async function staffRecipients(assigneeId: string | null): Promise<Recipient[]> 
   return db.user.findMany({ where: { role: { in: ["AGENT", "ADMIN"] }, active: true }, select: recipientSelect });
 }
 
-/** Client-side participants: the requester plus any client who has commented. */
+/** Client-side participants: the requester, colleagues copied in, and any client who has commented. */
 async function clientParticipants(ticketId: string, requester: Recipient): Promise<Recipient[]> {
-  const commenters = await db.user.findMany({
-    where: { role: "CLIENT", active: true, comments: { some: { ticketId } } },
+  const others = await db.user.findMany({
+    where: {
+      role: "CLIENT",
+      active: true,
+      OR: [{ comments: { some: { ticketId } } }, { watching: { some: { ticketId } } }],
+    },
     select: recipientSelect,
   });
-  return [requester, ...commenters];
+  return [requester, ...others];
 }
 
 export async function notifyTicketCreated(ticketId: string) {
@@ -74,7 +83,7 @@ export async function notifyTicketCreated(ticketId: string) {
     `${t.requester.name ?? t.requester.email} raised a ticket for ${t.product.name}:\n\n${t.subject}\n\n${t.description}`,
   );
   await deliver(
-    [t.requester],
+    await clientParticipants(t.id, t.requester),
     t,
     `We've received your request`,
     `Thanks — your ticket #${t.number} for ${t.product.name} has been logged and our team will be in touch.\n\n${t.description}`,
@@ -115,7 +124,9 @@ export async function notifyCommentAdded(commentId: string) {
 export async function notifyStatusChanged(ticketId: string, status: TicketStatus, actorId: string) {
   if (status !== "RESOLVED" && status !== "WAITING_ON_CLIENT" && status !== "CLOSED") return;
   const t = await db.ticket.findUnique({ where: { id: ticketId }, include: { requester: { select: recipientSelect } } });
-  if (!t || t.requesterId === actorId) return;
+  if (!t) return;
+  const recipients = (await clientParticipants(t.id, t.requester)).filter((r) => r.id !== actorId);
+  if (recipients.length === 0) return;
 
   const body =
     status === "RESOLVED"
@@ -124,7 +135,33 @@ export async function notifyStatusChanged(ticketId: string, status: TicketStatus
         ? "We need some more information from you to continue. Please reply with the details requested on the ticket."
         : "This ticket has been closed.";
 
-  await deliver([t.requester], t, `Status: ${statusLabels[status]}`, body);
+  const secret = process.env.AUTH_SECRET;
+  const surveyLinks =
+    status === "RESOLVED" && secret
+      ? (r: Recipient): Links => ({
+          heading: "How did we do? Choose a rating (you can add a comment on the next page):",
+          items: RATINGS.map((rating) => ({
+            label: ratingLabels[rating],
+            url: appUrl(`/survey/${surveyToken(t.number, r.id, secret)}?rating=${rating}`),
+          })),
+        })
+      : undefined;
+
+  await deliver(recipients, t, `Status: ${statusLabels[status]}`, body, surveyLinks);
+}
+
+export async function notifyWatcherAdded(ticketId: string, userId: string, addedByName: string) {
+  const [t, user] = await Promise.all([
+    db.ticket.findUnique({ where: { id: ticketId }, select: { number: true, subject: true, description: true } }),
+    db.user.findUnique({ where: { id: userId }, select: recipientSelect }),
+  ]);
+  if (!t || !user) return;
+  await deliver(
+    [user],
+    t,
+    `${addedByName} copied you in on ticket #${t.number}`,
+    `You'll now get updates about this ticket by email, and you can reply to them.\n\n${t.subject}\n\n${t.description}`,
+  );
 }
 
 export async function notifySlaBreach(ticketId: string, clock: "firstResponse" | "resolution") {

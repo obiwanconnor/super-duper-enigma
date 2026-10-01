@@ -26,19 +26,19 @@ export default async function OrganizationsPage({ searchParams }: { searchParams
       <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-4 py-3">Organisation</th>
-                <th className="px-4 py-3">Domains</th>
-                <th className="px-4 py-3 text-right">Users</th>
-                <th className="px-4 py-3 text-right">Products</th>
-                <th className="px-4 py-3 text-right">Open tickets</th>
+                <th scope="col" className="px-4 py-3">Organisation</th>
+                <th scope="col" className="px-4 py-3">Domains</th>
+                <th scope="col" className="px-4 py-3 text-right">Users</th>
+                <th scope="col" className="px-4 py-3 text-right">Products</th>
+                <th scope="col" className="px-4 py-3 text-right">Open tickets</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {orgs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-600">
                     No clients yet.
                   </td>
                 </tr>

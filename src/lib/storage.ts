@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { get, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 
 /**
  * File storage for attachments. Uses a private Vercel Blob store when
@@ -42,4 +42,14 @@ export async function readFileBuffer(key: string): Promise<Buffer | null> {
   const stream = await readFileStream(key);
   if (!stream) return null;
   return Buffer.from(await new Response(stream).arrayBuffer());
+}
+
+/** Permanently removes stored files (used by retention deletion). */
+export async function deleteFiles(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  if (useBlob()) {
+    for (let i = 0; i < keys.length; i += 100) await del(keys.slice(i, i + 100));
+    return;
+  }
+  await Promise.all(keys.filter((k) => !k.includes("..")).map((k) => rm(path.join(LOCAL_DIR, k), { force: true })));
 }

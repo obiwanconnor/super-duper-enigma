@@ -12,16 +12,16 @@ export function AttachmentList({ attachments }: { attachments: Attachment[] }) {
           {images.map((a) => (
             <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer" className="block">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/attachments/${a.id}`} alt={a.filename} className="h-28 max-w-60 rounded border border-slate-200 object-cover" />
+              <img src={`/api/attachments/${a.id}`} alt={`Open full-size image: ${a.filename}`} className="h-28 max-w-60 rounded border border-slate-200 object-cover" />
             </a>
           ))}
         </div>
       )}
-      <ul className="flex flex-wrap gap-2 text-xs">
+      <ul aria-label="Attachments" className="flex flex-wrap gap-2 text-xs">
         {attachments.map((a) => (
           <li key={a.id}>
-            <a href={`/api/attachments/${a.id}`} className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 hover:bg-slate-100">
-              📎 {a.filename} <span className="text-slate-500">({formatBytes(a.size)})</span>
+            <a href={`/api/attachments/${a.id}`} className="inline-flex min-h-6 items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-slate-800 hover:bg-slate-100">
+              <span aria-hidden="true">📎</span> {a.filename} <span className="text-slate-600">({formatBytes(a.size)})</span>
             </a>
           </li>
         ))}
@@ -30,16 +30,23 @@ export function AttachmentList({ attachments }: { attachments: Attachment[] }) {
   );
 }
 
-export function FileInput() {
+export function FileInput({ id, label = "Attachments (optional)" }: { id: string; label?: string }) {
   return (
     <div>
+      <label htmlFor={id} className="label">
+        {label}
+      </label>
       <input
+        id={id}
         type="file"
         name="files"
         multiple
-        className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-50"
+        aria-describedby={`${id}-hint`}
+        className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-400 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-800 hover:file:bg-slate-50"
       />
-      <p className="mt-1 text-xs text-slate-500">Screenshots, logs or documents · up to 5 files, 4 MB in total.</p>
+      <p id={`${id}-hint`} className="mt-1 text-xs text-slate-600">
+        Screenshots, logs or documents. Up to 5 files, 4 MB in total.
+      </p>
     </div>
   );
 }

@@ -49,10 +49,19 @@ export default async function KnowledgeBasePage({ searchParams }: { searchParams
         )}
       </div>
 
-      <form method="get" className="mb-6 flex flex-wrap gap-2">
-        <input name="q" defaultValue={q} placeholder="Search articles" className="input max-w-sm" />
+      <form method="get" role="search" aria-label="Search the knowledge base" className="mb-6 flex flex-wrap items-end gap-2">
+        <div>
+          <label htmlFor="kb-q" className="label">
+            Search articles
+          </label>
+          <input id="kb-q" name="q" type="search" defaultValue={q} className="input w-72 max-w-full" />
+        </div>
         {products.length > 1 && (
-          <select name="product" defaultValue={product ?? ""} className="input w-auto">
+          <div>
+          <label htmlFor="kb-product" className="label">
+            Product
+          </label>
+          <select id="kb-product" name="product" defaultValue={product ?? ""} className="input w-auto">
             <option value="">All products</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
@@ -60,12 +69,13 @@ export default async function KnowledgeBasePage({ searchParams }: { searchParams
               </option>
             ))}
           </select>
+          </div>
         )}
         <button className="btn-secondary">Search</button>
       </form>
 
       {articles.length === 0 ? (
-        <div className="card p-10 text-center text-sm text-slate-500">
+        <div className="card p-10 text-center text-sm text-slate-600">
           {q ? "No articles match your search." : "There are no articles yet."}{" "}
           <Link href="/tickets/new" className="link">
             Raise a ticket
@@ -76,13 +86,13 @@ export default async function KnowledgeBasePage({ searchParams }: { searchParams
         <div className="space-y-8">
           {[...grouped.values()].map((g) => (
             <section key={g.label}>
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{g.label}</h2>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">{g.label}</h2>
               <ul className="card divide-y divide-slate-100">
                 {g.items.map((a) => (
                   <li key={a.slug}>
                     <Link href={`/kb/${a.slug}`} className="block px-5 py-4 hover:bg-slate-50">
                       <div className="font-medium text-slate-900">{a.title}</div>
-                      <div className="mt-1 line-clamp-2 text-sm text-slate-500">{excerpt(a.body)}</div>
+                      <div className="mt-1 line-clamp-2 text-sm text-slate-600">{excerpt(a.body)}</div>
                     </Link>
                   </li>
                 ))}

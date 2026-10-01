@@ -7,3 +7,6 @@ out
 next-env.d.ts
 .vercel
 .uploads
+tests/e2e/.auth
+test-results
+playwright-report

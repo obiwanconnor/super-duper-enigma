@@ -30,7 +30,7 @@ export function ArticleForm({ products, article }: Props) {
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-slate-500">Only people at this product's client organisation can read the article.</p>
+        <p className="mt-1 text-xs text-slate-600">Only people at this product's client organisation can read the article.</p>
       </div>
       <div>
         <label className="label" htmlFor="body">

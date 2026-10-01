@@ -123,3 +123,18 @@ export function computeSla(ticket: SlaTicket, targets: SlaTargets, now = new Dat
 
   return { firstResponse, resolution };
 }
+
+/** "4 business hours", "1 business day", "2.5 business days" – for clients. */
+export function describeTarget(minutes: number): string {
+  const day = BUSINESS_DAY_MINUTES;
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
+  if (minutes >= day && minutes % (day / 2) === 0) {
+    const days = minutes / day;
+    return `${fmt(days)} business ${days === 1 ? "day" : "days"}`;
+  }
+  if (minutes >= 60) {
+    const hours = minutes / 60;
+    return `${fmt(hours)} business ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return `${minutes} business minutes`;
+}

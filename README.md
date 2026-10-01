@@ -9,7 +9,11 @@ A support portal for the software built by s6a. Client stakeholders raise and fo
 - **AI first-line triage (Claude)**: classifies and prioritises new tickets, asks the client clarifying questions straight away, and drafts replies (often from the knowledge base) that staff approve before sending. Each client can opt out.
 - **SLAs**: first-response and resolution targets per client and priority, counted in UK business hours, with breach alerts.
 - **Attachments**: screenshots and files on tickets and replies, from the web or by email.
-- **Staff dashboard**: queue health, response times against SLA, and monthly volumes per client.
+- **Staff dashboard**: queue health, response times against SLA, satisfaction, and monthly volumes per client.
+- **Client conveniences**: service targets shown on each ticket, a Good / Okay / Poor satisfaction survey, and copying in colleagues.
+- **Saved replies** for staff, with placeholders such as the requester's first name.
+- **Accessible**: built and tested to WCAG 2.2 AA, with light and dark appearance.
+- **UK GDPR tooling**: a privacy notice, an audit log, personal data export, erasure, and retention review.
 
 Stack: Next.js 16 (App Router, server actions), TypeScript, Auth.js v5, Prisma 6, PostgreSQL, Tailwind CSS 4. It is built to run on Vercel.
 
@@ -37,7 +41,15 @@ npm run dev
 
 Sign in at http://localhost:3000 with your admin email. When `SENDGRID_API_KEY` is empty, emails, including sign-in links, are **printed to the server console**. The demo data includes a client user, `jane@acme.example`.
 
-Run `npm test` for unit tests and `npm run typecheck` for types.
+Run `npm test` for unit tests and `npm run typecheck` for types. For the browser suite, which covers accessibility in both themes plus feature tests, build first and point it at a database:
+
+```bash
+npm run build
+npx playwright install chromium     # once
+npm run test:e2e                    # needs DATABASE_URL and AUTH_SECRET in the environment
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs all of this on every push and pull request, against a throwaway Postgres.
 
 ## Deploying to Vercel
 
@@ -110,6 +122,42 @@ Targets are set per client and priority under **Clients → organisation → SLA
 - Web uploads are limited to 5 files and 4 MB per message, because Vercel functions accept request bodies up to 4.5 MB. Email attachments up to 10 MB each are kept, but inline images such as signature logos are skipped. SendGrid posts the whole email to the webhook, so emails over about 4.5 MB in total will be rejected by Vercel.
 - Without `BLOB_READ_WRITE_TOKEN`, files are written to `./.uploads` (development only).
 
+## Accessibility (WCAG 2.2 AA)
+
+The portal targets WCAG 2.2 level AA. It provides:
+
+- A skip link; labelled `header`, `nav`, `main` and `footer` landmarks; one `h1` per page; and the current page marked with `aria-current`.
+- Visible labels on every form field, with hints linked by `aria-describedby`. Errors are announced with `role="alert"` and confirmations with `role="status"`.
+- Contrast of at least 4.5:1 for text and 3:1 for form-field borders, in both themes.
+- Links underlined, and a 3px focus outline on every interactive element.
+- Targets at least 24×24px (WCAG 2.5.8).
+- Status and SLA states always shown as text, never by colour alone.
+- Data tables with captions and header scopes.
+- Sign-in by email link or SSO, with no passwords or puzzles (Accessible Authentication, 3.3.8).
+- The same help and policy links on every page (Consistent Help, 3.2.6).
+- Respect for the device's reduced-motion setting.
+
+**Appearance:** light and dark themes, following the device by default, with a *Match device / Light / Dark* switch in the footer. The switch works without JavaScript; the choice is stored in a cookie and applied on the server, so pages never flash the wrong theme. Dark mode mirrors each Tailwind colour scale through CSS variables (`src/app/globals.css`), so new components get it for free.
+
+**Testing:** `tests/e2e/a11y.spec.ts` scans every page type with axe-core against WCAG 2.0, 2.1 and 2.2 at A and AA, in both themes. It covers the signed-out pages, every client page and every staff page. Any violation fails the build, and so does a contrast check axe can't resolve. `keyboard.spec.ts` checks the skip link, focus visibility, raising a ticket with the keyboard only, the theme switch and the survey radios. Automated tools catch roughly a third to a half of accessibility issues, so a manual screen-reader review, or an external audit, is still recommended before launch.
+
+The accessibility statement is at `/accessibility`. Update its dates whenever you re-test.
+
+## Privacy and data protection (UK GDPR)
+
+- **Privacy notice** at `/privacy`. It lists Vercel, the database host, SendGrid and Anthropic as processors, and covers AI processing, international transfers, retention and rights. Set `LEGAL_NAME` to your registered company name, and **have it reviewed** before launch: it's a sound draft, not legal advice.
+- **Audit log** (**Audit log**, admins): records who changed ticket status, priority, type, assignee and copied-in colleagues; client settings, SLA targets and contract dates; invitations, roles and deactivations; data exports and erasures; articles and saved replies; AI draft approvals; and retention deletions. It stores field values and identifiers, never message text.
+- **Export** (person's page → *Download data export*): a JSON file of everything held about a person, for subject access requests. Internal staff notes aren't included automatically; review them before responding.
+- **Erase** (person's page → *Erase personal data*, confirmed by typing their email): replaces their name and email, signs them out, removes their sign-in links and copied-in entries, and clears their survey comments. Their tickets and replies stay as part of the client's record.
+- **Retention:** set each client's **contract end date**. Two years later, the client appears under **Retention**, and on the dashboard, for an admin to review. Typing the client's name confirms permanent deletion of its tickets, files, people, products and articles. Nothing is deleted automatically.
+
+## Client features
+
+- **Service targets:** clients see "we aim to respond within …" on each ticket, and the full table on the new-ticket form, but not internal countdowns.
+- **Satisfaction survey:** the "resolved" email has Good / Okay / Poor links to a page where the person confirms and can add a comment. Visiting the link alone records nothing, because email scanners follow links. The link is signed, so it works without signing in, and the same form appears on resolved tickets. Results are on the dashboard.
+- **Copy in colleagues:** the requester, their colleagues or staff can copy in other people from the same client organisation, either when raising the ticket or later. Copied-in people get the same emails and can reply by email.
+- **Saved replies** (staff, under **Saved replies**): templates inserted into any reply or AI draft at the cursor. Placeholders `{{requester_first_name}}`, `{{client_name}}`, `{{ticket_number}}` and `{{agent_name}}` are filled in automatically.
+
 ## Single sign-on
 
 Each client organisation's settings page (**Clients → organisation**) sets:
@@ -159,11 +207,15 @@ src/app/login/                email-first login page
 src/app/(portal)/tickets/     ticket list, new ticket, ticket detail, server actions
 src/app/(portal)/kb/          knowledge base
 src/app/(portal)/dashboard/   staff dashboard
-src/app/(portal)/admin/       clients (incl. SLA targets, AI opt-out), staff, articles
+src/app/(portal)/admin/       clients (SLA targets, AI opt-out, contract end), staff, people,
+                              articles, saved replies, audit log, retention
+src/app/(public)/             privacy notice, accessibility statement, satisfaction survey
+src/lib/audit.ts              audit log; src/lib/privacy.ts export/erase; src/lib/retention.ts
 src/app/api/email/inbound/    SendGrid Inbound Parse webhook
 src/app/api/attachments/      access-checked file downloads
 src/app/api/cron/sla/         SLA breach alerts and AI retries
 tests/                        vitest unit tests
+tests/e2e/                    Playwright: axe-core WCAG scans (light + dark), keyboard and feature tests
 ```
 
 ## Not yet built
@@ -173,5 +225,5 @@ Natural next steps:
 - Direct-to-Blob browser uploads, to lift the 4 MB web attachment limit.
 - An evaluation set for the AI triage prompt, built from real tickets, before tuning it.
 - Rate limiting on the login and webhook endpoints.
-- CSAT survey on resolution.
+- A manual screen-reader review (NVDA and VoiceOver), or an external accessibility audit.
 - Slack or Teams alerts for urgent tickets.

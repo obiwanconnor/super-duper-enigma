@@ -87,11 +87,12 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
         )}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+      <nav aria-label="Ticket views" className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
         {views.map((v) => (
           <Link
             key={v.key}
             href={qs({ view: v.key, page: undefined })}
+            aria-current={view === v.key ? "page" : undefined}
             className={`-mb-px border-b-2 px-3 py-2 text-sm ${
               view === v.key ? "border-brand-600 font-medium text-brand-700" : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
@@ -99,22 +100,36 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
             {v.label}
           </Link>
         ))}
-      </div>
+      </nav>
 
-      <form className="mb-4 flex flex-wrap gap-2" method="get">
+      <form className="mb-4 flex flex-wrap items-end gap-2" method="get" role="search" aria-label="Filter tickets">
         <input type="hidden" name="view" value={view} />
-        <input name="q" defaultValue={sp.q} placeholder="Search subject, description or #number" className="input max-w-xs" />
-        <select name="product" defaultValue={sp.product ?? ""} className="input w-auto">
+        <div>
+          <label htmlFor="filter-q" className="label">
+            Search
+          </label>
+          <input id="filter-q" name="q" type="search" defaultValue={sp.q} placeholder="Subject, description or #number" className="input w-64 max-w-full" />
+        </div>
+        <div>
+          <label htmlFor="filter-product" className="label">
+            Product
+          </label>
+          <select id="filter-product" name="product" defaultValue={sp.product ?? ""} className="input w-auto">
           <option value="">All products</option>
           {products.map((p) => (
             <option key={p.id} value={p.id}>
               {staff ? `${p.organization.name} – ${p.name}` : p.name}
             </option>
           ))}
-        </select>
+          </select>
+        </div>
         {staff && (
           <>
-            <select name="org" defaultValue={sp.org ?? ""} className="input w-auto">
+            <div>
+            <label htmlFor="filter-org" className="label">
+              Client
+            </label>
+            <select id="filter-org" name="org" defaultValue={sp.org ?? ""} className="input w-auto">
               <option value="">All clients</option>
               {orgs.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -122,17 +137,23 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                 </option>
               ))}
             </select>
-            <select name="assignee" defaultValue={sp.assignee ?? ""} className="input w-auto">
+            </div>
+            <div>
+            <label htmlFor="filter-assignee" className="label">
+              Assignee
+            </label>
+            <select id="filter-assignee" name="assignee" defaultValue={sp.assignee ?? ""} className="input w-auto">
               <option value="">Anyone</option>
               <option value="unassigned">Unassigned</option>
             </select>
+            </div>
           </>
         )}
         <button className="btn-secondary">Filter</button>
       </form>
 
       {tickets.length === 0 ? (
-        <div className="card p-10 text-center text-sm text-slate-500">
+        <div className="card p-10 text-center text-sm text-slate-600">
           {products.length === 0 && !staff
             ? "Your organisation doesn't have any products set up yet. Please contact your account manager."
             : "No tickets match these filters."}
@@ -140,26 +161,27 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <caption className="sr-only">Tickets, most recently updated first</caption>
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Subject</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Priority</th>
-                {staff && <th className="px-4 py-3">SLA</th>}
-                {staff && <th className="px-4 py-3">Assignee</th>}
-                <th className="px-4 py-3">Updated</th>
+                <th scope="col" className="px-4 py-3"><abbr title="Number">#</abbr></th>
+                <th scope="col" className="px-4 py-3">Subject</th>
+                <th scope="col" className="px-4 py-3">Status</th>
+                <th scope="col" className="px-4 py-3">Priority</th>
+                {staff && <th scope="col" className="px-4 py-3">SLA</th>}
+                {staff && <th scope="col" className="px-4 py-3">Assignee</th>}
+                <th scope="col" className="px-4 py-3">Updated</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {tickets.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-500">{t.number}</td>
+                  <td className="px-4 py-3 text-slate-600">{t.number}</td>
                   <td className="px-4 py-3">
                     <Link href={`/tickets/${t.number}`} className="font-medium text-slate-900 hover:text-brand-700">
                       {t.subject}
                     </Link>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-slate-600">
                       {staff ? `${t.organization.name} · ` : ""}
                       {t.product.name} · {t.requester.name ?? t.requester.email}
                     </div>
@@ -176,7 +198,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                     </td>
                   )}
                   {staff && <td className="px-4 py-3 text-slate-600">{t.assignee ? (t.assignee.name ?? t.assignee.email) : "—"}</td>}
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-500">
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-600">
                     <Time date={t.updatedAt} />
                   </td>
                 </tr>

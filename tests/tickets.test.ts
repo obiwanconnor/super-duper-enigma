@@ -49,3 +49,35 @@ describe("slug helpers", () => {
     expect(parseDomains("@Acme.com, acme.co.uk\nbad, acme.com")).toEqual(["acme.com", "acme.co.uk"]);
   });
 });
+
+import { diff } from "@/lib/audit";
+
+describe("audit diff", () => {
+  it("records only changed fields", () => {
+    expect(diff({ status: "OPEN", priority: "LOW", tags: ["a"] }, { status: "RESOLVED", priority: "LOW", tags: ["a"] })).toEqual({
+      status: { from: "OPEN", to: "RESOLVED" },
+    });
+  });
+});
+
+import { fillPlaceholders, firstName } from "@/lib/canned";
+import { isPastRetention, retentionEndsAt } from "@/lib/retention";
+
+describe("saved reply placeholders", () => {
+  it("fills known placeholders and leaves unknown ones", () => {
+    const values = { requester_first_name: "Jane", client_name: "Acme", ticket_number: "12", agent_name: "Sam" };
+    expect(fillPlaceholders("Hi {{ requester_first_name }}, re #{{ticket_number}} {{oops}}", values)).toBe("Hi Jane, re #12 {{oops}}");
+    expect(firstName("Jane Client")).toBe("Jane");
+    expect(firstName(null)).toBe("there");
+  });
+});
+
+describe("retention", () => {
+  it("is two years after contract end", () => {
+    const end = new Date("2024-03-31T00:00:00Z");
+    expect(retentionEndsAt(end)?.toISOString()).toBe("2026-03-31T00:00:00.000Z");
+    expect(isPastRetention(end, new Date("2026-03-30T00:00:00Z"))).toBe(false);
+    expect(isPastRetention(end, new Date("2026-04-01T00:00:00Z"))).toBe(true);
+    expect(isPastRetention(null)).toBe(false);
+  });
+});

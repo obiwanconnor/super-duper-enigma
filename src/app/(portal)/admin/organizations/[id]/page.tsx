@@ -12,6 +12,11 @@ import { aiConfigured } from "@/lib/ai/assistant";
 import { PRIORITIES, targetsFor } from "@/lib/sla/sla";
 import { priorityLabels } from "@/lib/labels";
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const org = await db.organization.findUnique({ where: { id: (await params).id }, select: { name: true } });
+  return { title: org ? `${org.name} – client settings` : "Client" };
+}
+
 export default async function OrganizationPage({
   params,
   searchParams,
@@ -71,7 +76,7 @@ export default async function OrganizationPage({
             <input type="checkbox" name="autoJoin" defaultChecked={org.autoJoin} className="mt-1" />
             <span>
               Anyone with an email address at these domains can sign in
-              <span className="block text-slate-500">Otherwise users must be invited individually.</span>
+              <span className="block text-slate-600">Otherwise users must be invited individually.</span>
             </span>
           </label>
 
@@ -93,14 +98,14 @@ export default async function OrganizationPage({
               Microsoft Entra tenant ID
             </label>
             <input id="entraTenantId" name="entraTenantId" defaultValue={org.entraTenantId ?? ""} placeholder="00000000-0000-0000-0000-000000000000" className="input font-mono" />
-            <p className="mt-1 text-xs text-slate-500">Required for Microsoft sign-in. Only accounts from this tenant are accepted.</p>
+            <p className="mt-1 text-xs text-slate-600">Required for Microsoft sign-in. Only accounts from this tenant are accepted.</p>
           </div>
           <div>
             <label className="label" htmlFor="googleHostedDomain">
               Google Workspace domain
             </label>
             <input id="googleHostedDomain" name="googleHostedDomain" defaultValue={org.googleHostedDomain ?? ""} placeholder="acme.com" className="input" />
-            <p className="mt-1 text-xs text-slate-500">Optional. Restricts Google sign-in to this Workspace.</p>
+            <p className="mt-1 text-xs text-slate-600">Optional. Restricts Google sign-in to this Workspace.</p>
           </div>
           <div>
             <label className="label" htmlFor="oidcProviderKey">
@@ -115,11 +120,27 @@ export default async function OrganizationPage({
               ))}
             </select>
           </div>
+          <div>
+            <label className="label" htmlFor="contractEndsAt">
+              Contract end date
+            </label>
+            <input
+              id="contractEndsAt"
+              name="contractEndsAt"
+              type="date"
+              defaultValue={org.contractEndsAt ? org.contractEndsAt.toISOString().slice(0, 10) : ""}
+              className="input"
+              aria-describedby="contractEndsAt-hint"
+            />
+            <p id="contractEndsAt-hint" className="mt-1 text-xs text-slate-600">
+              Leave blank while the contract is active. Data becomes due for deletion 2 years after this date.
+            </p>
+          </div>
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="aiEnabled" defaultChecked={org.aiEnabled} className="mt-1" />
             <span>
               Use AI first-line triage for this client
-              <span className="block text-slate-500">
+              <span className="block text-slate-600">
                 Ticket text, conversation and screenshots are sent to Claude (Anthropic) to classify tickets, ask clarifying questions and draft replies.
                 {!aiConfigured() && " AI is not configured in this deployment (ANTHROPIC_API_KEY)."}
               </span>
@@ -131,17 +152,17 @@ export default async function OrganizationPage({
         <div className="space-y-8">
           <section className="card p-5">
             <h2 className="mb-1 font-semibold">SLA targets</h2>
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="mb-3 text-xs text-slate-600">
               In business hours (Mon–Fri 09:00–17:00 UK, excluding bank holidays; 1 day = 8 hours). The resolution clock pauses while a ticket is waiting on the client.
             </p>
             <form action={updateSlaTargets}>
               <input type="hidden" name="organizationId" value={org.id} />
               <table className="mb-3 w-full text-sm">
-                <thead className="text-left text-xs text-slate-500">
+                <thead className="text-left text-xs text-slate-600">
                   <tr>
-                    <th className="pb-2 font-medium">Priority</th>
-                    <th className="pb-2 font-medium">First response (h)</th>
-                    <th className="pb-2 font-medium">Resolution (h)</th>
+                    <th scope="col" className="pb-2 font-medium">Priority</th>
+                    <th scope="col" className="pb-2 font-medium">First response (h)</th>
+                    <th scope="col" className="pb-2 font-medium">Resolution (h)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,21 +185,21 @@ export default async function OrganizationPage({
               <SubmitButton className="btn-secondary" pendingText="Saving…">
                 Save targets
               </SubmitButton>
-              {org.slaTargets.length === 0 && <span className="ml-3 text-xs text-slate-500">Showing the standard defaults.</span>}
+              {org.slaTargets.length === 0 && <span className="ml-3 text-xs text-slate-600">Showing the standard defaults.</span>}
             </form>
           </section>
 
           <section className="card p-5">
             <h2 className="mb-3 font-semibold">Products</h2>
             <ul className="mb-4 divide-y divide-slate-100 text-sm">
-              {org.products.length === 0 && <li className="py-2 text-slate-500">No products yet.</li>}
+              {org.products.length === 0 && <li className="py-2 text-slate-600">No products yet.</li>}
               {org.products.map((p) => (
                 <li key={p.id} className="flex items-center justify-between py-2">
                   <div>
                     <div className="font-medium">{p.name}</div>
-                    {p.description && <div className="text-slate-500">{p.description}</div>}
+                    {p.description && <div className="text-slate-600">{p.description}</div>}
                   </div>
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs text-slate-600">
                     <Link href={`/tickets?product=${p.id}&view=all`} className="link">
                       {p._count.tickets} {p._count.tickets === 1 ? "ticket" : "tickets"}
                     </Link>{" "}
@@ -187,37 +208,62 @@ export default async function OrganizationPage({
                 </li>
               ))}
             </ul>
-            <form action={addProduct} className="flex flex-wrap gap-2">
+            <form action={addProduct} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="organizationId" value={org.id} />
-              <input name="name" placeholder="Product name" required className="input flex-1" />
-              <input name="description" placeholder="Description (optional)" className="input flex-1" />
-              <SubmitButton className="btn-secondary">Add</SubmitButton>
+              <div className="min-w-40 flex-1">
+                <label htmlFor="product-name" className="label">
+                  Product name
+                </label>
+                <input id="product-name" name="name" required className="input" />
+              </div>
+              <div className="min-w-40 flex-1">
+                <label htmlFor="product-description" className="label">
+                  Description (optional)
+                </label>
+                <input id="product-description" name="description" className="input" />
+              </div>
+              <SubmitButton className="btn-secondary">Add product</SubmitButton>
             </form>
           </section>
 
           <section className="card p-5">
             <h2 className="mb-3 font-semibold">People</h2>
             <ul className="mb-4 divide-y divide-slate-100 text-sm">
-              {org.users.length === 0 && <li className="py-2 text-slate-500">No users yet.</li>}
+              {org.users.length === 0 && <li className="py-2 text-slate-600">No users yet.</li>}
               {org.users.map((u) => (
                 <li key={u.id} className="flex items-center justify-between gap-2 py-2">
-                  <div className={u.active ? "" : "text-slate-400 line-through"}>
-                    <div className="font-medium">{u.name ?? u.email}</div>
-                    {u.name && <div className="text-slate-500">{u.email}</div>}
+                  <div>
+                    <Link href={`/admin/users/${u.id}`} className="font-medium link">
+                      {u.name ?? u.email}
+                    </Link>
+                    {!u.active && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">Inactive</span>}
+                    {u.name && <div className="text-slate-600">{u.email}</div>}
                   </div>
                   <form action={setUserActive}>
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="hidden" name="active" value={String(!u.active)} />
                     <input type="hidden" name="returnTo" value={path} />
-                    <button className="text-xs link">{u.active ? "Deactivate" : "Reactivate"}</button>
+                    <button className="btn-link" aria-label={`${u.active ? "Deactivate" : "Reactivate"} ${u.name ?? u.email}`}>
+                      {u.active ? "Deactivate" : "Reactivate"}
+                    </button>
                   </form>
                 </li>
               ))}
             </ul>
-            <form action={inviteClientUser} className="flex flex-wrap gap-2">
+            <form action={inviteClientUser} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="organizationId" value={org.id} />
-              <input name="email" type="email" placeholder="Email" required className="input flex-1" />
-              <input name="name" placeholder="Name (optional)" className="input flex-1" />
+              <div className="min-w-40 flex-1">
+                <label htmlFor="invite-email" className="label">
+                  Email
+                </label>
+                <input id="invite-email" name="email" type="email" required autoComplete="off" className="input" />
+              </div>
+              <div className="min-w-40 flex-1">
+                <label htmlFor="invite-name" className="label">
+                  Name (optional)
+                </label>
+                <input id="invite-name" name="name" autoComplete="off" className="input" />
+              </div>
               <SubmitButton className="btn-secondary">Invite</SubmitButton>
             </form>
           </section>

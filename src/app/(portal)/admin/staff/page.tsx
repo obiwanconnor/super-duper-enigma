@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
 import { Flash } from "@/components/flash";
@@ -22,20 +23,23 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
       <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3 text-right">Open assigned</th>
-                <th className="px-4 py-3" />
+                <th scope="col" className="px-4 py-3">Name</th>
+                <th scope="col" className="px-4 py-3">Role</th>
+                <th scope="col" className="px-4 py-3 text-right">Open assigned</th>
+                <th scope="col" className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {staff.map((u) => (
-                <tr key={u.id} className={u.active ? "" : "text-slate-400"}>
+                <tr key={u.id}>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{u.name ?? u.email}</div>
-                    {u.name && <div className="text-slate-500">{u.email}</div>}
+                    <Link href={`/admin/users/${u.id}`} className="font-medium link">
+                      {u.name ?? u.email}
+                    </Link>
+                    {!u.active && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">Inactive</span>}
+                    {u.name && <div className="text-slate-600">{u.email}</div>}
                   </td>
                   <td className="px-4 py-3">
                     {u.id === admin.id ? (
@@ -43,11 +47,13 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
                     ) : (
                       <form action={setStaffRole} className="flex items-center gap-2">
                         <input type="hidden" name="userId" value={u.id} />
-                        <select name="role" defaultValue={u.role} className="input w-auto py-1">
+                        <select name="role" defaultValue={u.role} className="input w-auto py-1" aria-label={`Role for ${u.name ?? u.email}`}>
                           <option value="AGENT">Agent</option>
                           <option value="ADMIN">Admin</option>
                         </select>
-                        <button className="text-xs link">Save</button>
+                        <button className="btn-link" aria-label={`Save role for ${u.name ?? u.email}`}>
+                          Save
+                        </button>
                       </form>
                     )}
                   </td>
@@ -58,7 +64,9 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
                         <input type="hidden" name="userId" value={u.id} />
                         <input type="hidden" name="active" value={String(!u.active)} />
                         <input type="hidden" name="returnTo" value="/admin/staff" />
-                        <button className="text-xs link">{u.active ? "Deactivate" : "Reactivate"}</button>
+                        <button className="btn-link" aria-label={`${u.active ? "Deactivate" : "Reactivate"} ${u.name ?? u.email}`}>
+                          {u.active ? "Deactivate" : "Reactivate"}
+                        </button>
                       </form>
                     )}
                   </td>

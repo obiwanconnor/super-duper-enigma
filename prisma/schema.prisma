@@ -58,6 +58,12 @@ enum AiStatus {
   FAILED
 }
 
+enum SatisfactionRating {
+  GOOD
+  OKAY
+  POOR
+}
+
 enum DraftStatus {
   PENDING
   SENT
@@ -80,6 +86,8 @@ model Organization {
   googleHostedDomain String?
   // Key of the entry in OIDC_PROVIDERS used by this organisation.
   oidcProviderKey    String?
+  // Data is kept until two years after the contract ends (see src/lib/retention.ts).
+  contractEndsAt     DateTime?
   // Whether ticket content may be sent to the AI assistant for triage.
   aiEnabled          Boolean      @default(true)
   createdAt          DateTime     @default(now())
@@ -131,14 +139,19 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  accounts       Account[]
-  sessions       Session[]
-  requested      Ticket[]     @relation("requester")
-  assigned       Ticket[]     @relation("assignee")
-  comments       Comment[]
-  articles       Article[]
-  attachments    Attachment[]
-  resolvedDrafts AiDraft[]
+  accounts        Account[]
+  sessions        Session[]
+  requested       Ticket[]               @relation("requester")
+  assigned        Ticket[]               @relation("assignee")
+  comments        Comment[]
+  articles        Article[]
+  attachments     Attachment[]
+  resolvedDrafts  AiDraft[]
+  watching        TicketWatcher[]        @relation("watcher")
+  addedWatchers   TicketWatcher[]        @relation("watcherAddedBy")
+  satisfaction    SatisfactionResponse[]
+  cannedResponses CannedResponse[]
+  auditEvents     AuditEvent[]
 }
 
 model Ticket {
@@ -178,9 +191,11 @@ model Ticket {
   aiPriorityReason    String?
   aiLikelyIncident    Boolean         @default(false)
 
-  comments    Comment[]
-  attachments Attachment[]
-  drafts      AiDraft[]
+  comments     Comment[]
+  attachments  Attachment[]
+  drafts       AiDraft[]
+  watchers     TicketWatcher[]
+  satisfaction SatisfactionResponse?
 
   @@index([organizationId, status])
   @@index([aiStatus])
@@ -292,4 +307,57 @@ model VerificationToken {
   expires    DateTime
 
   @@id([identifier, token])
+}
+
+// Colleagues copied in on a ticket; they receive the same emails as the requester.
+model TicketWatcher {
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("watcher", fields: [userId], references: [id], onDelete: Cascade)
+  addedById String
+  addedBy   User     @relation("watcherAddedBy", fields: [addedById], references: [id])
+  createdAt DateTime @default(now())
+
+  @@id([ticketId, userId])
+}
+
+// One satisfaction rating per ticket; responding again replaces it.
+model SatisfactionResponse {
+  id        String             @id @default(cuid())
+  ticketId  String             @unique
+  ticket    Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  rating    SatisfactionRating
+  comment   String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+// Reusable reply templates for staff.
+model CannedResponse {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Who changed what. Details hold identifiers and field values, never message bodies.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  summary    String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }

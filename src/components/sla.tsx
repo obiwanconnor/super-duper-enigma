@@ -7,7 +7,7 @@ const styles: Record<Clock["state"], string> = {
   running: "bg-slate-50 text-slate-700 ring-slate-200",
   at_risk: "bg-amber-50 text-amber-800 ring-amber-200",
   breached: "bg-red-50 text-red-700 ring-red-200",
-  paused: "bg-slate-100 text-slate-500 ring-slate-200",
+  paused: "bg-slate-100 text-slate-600 ring-slate-200",
 };
 
 export function clockLabel(c: Clock): string {

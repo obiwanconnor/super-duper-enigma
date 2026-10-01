@@ -50,19 +50,19 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
+    <>
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">
+          <div aria-hidden="true" className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">
             s6a
           </div>
           <h1 className="text-xl font-semibold">{brand.name}</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to raise and track support requests.</p>
+          <p className="mt-1 text-sm text-slate-600">Sign in to raise and track support requests.</p>
         </div>
 
         <div className="card p-6">
           {error && (
-            <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
               {errorMessages[error] ?? "Something went wrong signing you in. Please try again."}
             </p>
           )}
@@ -102,6 +102,6 @@ export default async function LoginPage({
           )}
         </div>
       </div>
-    </main>
+    </>
   );
 }

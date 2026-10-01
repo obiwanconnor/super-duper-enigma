@@ -130,3 +130,26 @@ describe("stats helpers", () => {
     expect(lastMonths(3, new Date("2026-02-10T00:00:00Z"))).toEqual(["2025-12", "2026-01", "2026-02"]);
   });
 });
+
+import { describeTarget } from "@/lib/sla/sla";
+import { parseSurveyToken, surveyToken } from "@/lib/survey";
+
+describe("describeTarget", () => {
+  it("speaks in business hours and days", () => {
+    expect(describeTarget(60)).toBe("1 business hour");
+    expect(describeTarget(240)).toBe("4 business hours");
+    expect(describeTarget(480)).toBe("1 business day");
+    expect(describeTarget(1200)).toBe("2.5 business days");
+    expect(describeTarget(30)).toBe("30 business minutes");
+  });
+});
+
+describe("survey tokens", () => {
+  it("round-trips and rejects tampering", () => {
+    const t = surveyToken(12, "cuser", "secret");
+    expect(parseSurveyToken(t, "secret")).toEqual({ ticketNumber: 12, userId: "cuser" });
+    expect(parseSurveyToken(t.replace("12.", "13."), "secret")).toBeNull();
+    expect(parseSurveyToken(t, "other")).toBeNull();
+    expect(parseSurveyToken("nonsense", "secret")).toBeNull();
+  });
+});

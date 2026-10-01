@@ -4,7 +4,7 @@ export const metadata = { title: "Check your email" };
 
 export default function CheckEmailPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
+    <>
       <div className="card w-full max-w-sm p-6 text-center">
         <h1 className="text-lg font-semibold">Check your email</h1>
         <p className="mt-2 text-sm text-slate-600">
@@ -14,6 +14,6 @@ export default function CheckEmailPage() {
           Back to sign in
         </Link>
       </div>
-    </main>
+    </>
   );
 }

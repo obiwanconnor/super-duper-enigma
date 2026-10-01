@@ -10,8 +10,10 @@ import { requireViewer } from "@/lib/session";
 import { addComment, setTicketStatus } from "@/lib/tickets";
 import { statusChangeData } from "@/lib/sla/sla";
 import { filesFromForm, saveAttachments, validateUploads } from "@/lib/attachments";
-import { notifyCommentAdded, notifyStatusChanged, notifyTicketCreated } from "@/lib/notifications";
+import { notifyCommentAdded, notifyStatusChanged, notifyTicketCreated, notifyWatcherAdded } from "@/lib/notifications";
+import { recordSatisfaction } from "@/lib/satisfaction";
 import { initialAiStatus, runReplyDraft, runTriage } from "@/lib/ai/assistant";
+import { audit, diff } from "@/lib/audit";
 
 const STATUS = z.enum(["OPEN", "IN_PROGRESS", "WAITING_ON_CLIENT", "RESOLVED", "CLOSED"]);
 
@@ -56,6 +58,12 @@ export async function createTicket(formData: FormData) {
     },
   });
   await saveAttachments({ ticketId: ticket.id, commentId: null, uploadedById: viewer.id, files });
+
+  // Colleagues copied in when raising the ticket.
+  const watcherIds = await eligibleWatchers(product.organizationId, formData.getAll("watchers").map(String), viewer.id);
+  if (watcherIds.length) {
+    await db.ticketWatcher.createMany({ data: watcherIds.map((userId) => ({ ticketId: ticket.id, userId, addedById: viewer.id })) });
+  }
 
   after(async () => {
     await notifyTicketCreated(ticket.id);
@@ -139,6 +147,17 @@ export async function updateTicket(formData: FormData) {
       assigneeId,
     },
   });
+  const changes = diff(ticket, { status: data.status, priority: data.priority, type: data.type, assigneeId });
+  if (Object.keys(changes).length) {
+    await audit({
+      actorId: viewer.id,
+      action: "ticket.updated",
+      entityType: "ticket",
+      entityId: ticket.id,
+      summary: `Updated ticket #${ticket.number}: ${Object.keys(changes).join(", ")}`,
+      details: changes as never,
+    });
+  }
 
   if (data.status !== ticket.status) {
     after(() => notifyStatusChanged(ticket.id, data.status, viewer.id));
@@ -161,6 +180,14 @@ export async function clientSetStatus(formData: FormData) {
         body: status === "RESOLVED" ? "_Marked this ticket as resolved._" : "_Reopened this ticket._",
       },
     });
+  });
+  await audit({
+    actorId: viewer.id,
+    action: "ticket.status_changed",
+    entityType: "ticket",
+    entityId: ticket.id,
+    summary: `Set ticket #${ticket.number} to ${status}`,
+    details: { status: { from: ticket.status, to: status } },
   });
   revalidatePath(`/tickets/${ticket.number}`);
 }
@@ -187,6 +214,14 @@ export async function sendDraft(formData: FormData) {
 
   const comment = await addComment({ ticketId: draft.ticketId, author: viewer, body, internal: false, source: "WEB", setStatus });
   await db.aiDraft.update({ where: { id: draft.id }, data: { status: "SENT", resolvedById: viewer.id, resolvedAt: new Date() } });
+  await audit({
+    actorId: viewer.id,
+    action: "ai_draft.sent",
+    entityType: "ticket",
+    entityId: draft.ticketId,
+    summary: `Approved and sent the AI draft on ticket #${draft.ticket.number}${body === draft.body ? "" : " (edited)"}`,
+    details: { draftId: draft.id, edited: body !== draft.body },
+  });
 
   after(() => notifyCommentAdded(comment.id));
   revalidatePath(path);
@@ -198,6 +233,14 @@ export async function discardDraft(formData: FormData) {
   await db.aiDraft.updateMany({
     where: { id: draft.id, status: "PENDING" },
     data: { status: "DISCARDED", resolvedById: viewer.id, resolvedAt: new Date() },
+  });
+  await audit({
+    actorId: viewer.id,
+    action: "ai_draft.discarded",
+    entityType: "ticket",
+    entityId: draft.ticketId,
+    summary: `Discarded the AI draft on ticket #${draft.ticket.number}`,
+    details: { draftId: draft.id },
   });
   revalidatePath(`/tickets/${draft.ticket.number}`);
 }
@@ -215,4 +258,52 @@ export async function retryTriage(formData: FormData) {
   await db.ticket.update({ where: { id: ticket.id }, data: { aiStatus: "PENDING", aiAttempts: 0 } });
   await runTriage(ticket.id);
   revalidatePath(`/tickets/${ticket.number}`);
+}
+
+// ---- Colleagues copied in ----------------------------------------------------
+
+/** Active client users in the ticket's organisation, excluding the requester. */
+async function eligibleWatchers(organizationId: string, userIds: string[], requesterId: string) {
+  if (userIds.length === 0) return [];
+  const users = await db.user.findMany({
+    where: { id: { in: userIds.filter((id) => id !== requesterId) }, organizationId, role: "CLIENT", active: true },
+    select: { id: true },
+  });
+  return users.map((u) => u.id);
+}
+
+export async function addWatcher(formData: FormData) {
+  const { viewer, ticket } = await loadTicketForViewer(String(formData.get("ticketId")));
+  const path = `/tickets/${ticket.number}`;
+  const [userId] = await eligibleWatchers(ticket.organizationId, [String(formData.get("userId") ?? "")], ticket.requesterId);
+  if (!userId) redirect(`${path}?error=${encodeURIComponent("Choose a colleague from this organisation")}`);
+
+  await db.ticketWatcher.upsert({
+    where: { ticketId_userId: { ticketId: ticket.id, userId } },
+    create: { ticketId: ticket.id, userId, addedById: viewer.id },
+    update: {},
+  });
+  await audit({ actorId: viewer.id, action: "ticket.watcher_added", entityType: "ticket", entityId: ticket.id, summary: `Copied a colleague in on ticket #${ticket.number}`, details: { userId } });
+  after(() => notifyWatcherAdded(ticket.id, userId, viewer.name ?? viewer.email));
+  revalidatePath(path);
+  redirect(`${path}?notice=${encodeURIComponent("Colleague copied in")}`);
+}
+
+export async function removeWatcher(formData: FormData) {
+  const { viewer, ticket } = await loadTicketForViewer(String(formData.get("ticketId")));
+  const userId = String(formData.get("userId") ?? "");
+  await db.ticketWatcher.deleteMany({ where: { ticketId: ticket.id, userId } });
+  await audit({ actorId: viewer.id, action: "ticket.watcher_removed", entityType: "ticket", entityId: ticket.id, summary: `Removed a colleague from ticket #${ticket.number}`, details: { userId } });
+  revalidatePath(`/tickets/${ticket.number}`);
+  redirect(`/tickets/${ticket.number}?notice=${encodeURIComponent("Colleague removed")}`);
+}
+
+// ---- Satisfaction --------------------------------------------------------------
+
+export async function submitTicketSurvey(formData: FormData) {
+  const { viewer, ticket } = await loadTicketForViewer(String(formData.get("ticketId")));
+  const path = `/tickets/${ticket.number}`;
+  if (isStaff(viewer)) notFound();
+  const ok = await recordSatisfaction(ticket.id, viewer.id, formData);
+  redirect(`${path}?${ok ? "notice=" + encodeURIComponent("Thanks for your feedback") : "error=" + encodeURIComponent("Please choose a rating")}`);
 }

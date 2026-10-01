@@ -30,7 +30,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         ← Knowledge base
       </Link>
       <div className="mt-2 mb-6">
-        <div className="text-sm text-slate-500">
+        <div className="text-sm text-slate-600">
           {article.product.name} · Updated <Time date={article.updatedAt} />
           {!article.published && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">Draft</span>}
         </div>

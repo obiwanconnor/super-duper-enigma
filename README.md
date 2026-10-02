@@ -14,7 +14,8 @@ A support portal for the software built by s6a. Client stakeholders raise and fo
 - **Saved replies** for staff, with placeholders such as the requester's first name.
 - **Client admins**: named people at each client manage their own colleagues and see their organisation's reports, with CSV export.
 - **Service notices**: incident and maintenance notices per product, shown as a banner and emailed to affected clients, with duplicate tickets linked to them.
-- **Security**: idle sign-out (staff after 8 hours, clients after 7 days, with a warning) and rate limiting on sign-in, inbound email and surveys.
+- **Monthly summaries**: an accessible (tagged) PDF for each client, emailed on the first working day of the month to the client's admins and to s6a admins, and downloadable on demand.
+- **Security**: idle sign-out (staff after 8 hours, clients after 7 days, with a warning), rate limiting, a nonce-based Content Security Policy, and standard security headers.
 - **Accessible**: built and tested to WCAG 2.2 AA, with light and dark appearance.
 - **UK GDPR tooling**: a privacy notice, an audit log, personal data export, erasure, and retention review.
 
@@ -183,6 +184,31 @@ Any staff member can post an **incident** or **planned maintenance** notice unde
 - Publishing, updating and resolving each optionally email every active person at the affected clients.
 - On a ticket, staff can link it to an active notice for that product as a duplicate report. The client then sees "Part of a known issue" with a link.
 
+## Monthly summaries
+
+On the first working day of each month (bank holidays skipped), `/api/cron/monthly-reports` emails every active client's summary for the previous month. It runs at 07:45 UTC on weekdays and only acts on the right day.
+
+- **Recipients:** the client's admins and every s6a admin. The figures are in the email body, with the PDF attached.
+- **Sent once:** each send is recorded in `MonthlyReportRun` before any email goes out, so a retry can't send it twice. To send outside the schedule, call the endpoint with `?force=1` and the cron bearer token; it still sends at most once per client per month.
+- **Downloads:** client admins can download any past month from **Reports → Monthly summaries**. s6a admins can download from each client's settings page.
+- **Contents:** tickets raised, resolved and open at month end; first-response and resolution times and the share within target; satisfaction; the same figures per product; service notices during the month; and the client's service targets. Month boundaries are UK time.
+- **Accessibility:** the PDF is generated with pdfkit as a **tagged PDF**:
+  - document language `en-GB`, with the title shown in the viewer's title bar
+  - a logical structure of `H1`/`H2` headings, paragraphs, a list, and tables with `TH` header cells
+  - embedded DejaVu Sans fonts (`assets/fonts`, Bitstream Vera licence)
+  - decorative rules and page numbers marked as artifacts, so screen readers skip them
+
+  The tests check the tagging on every downloaded PDF. pdfkit can't yet set the `Scope` attribute on header cells, so for a formal PDF/UA certification, run the file through a PDF/UA checker such as PAC.
+
+## Security headers
+
+- **Content Security Policy** (`src/proxy.ts`): a fresh nonce on every request, with `script-src 'self' 'nonce-…' 'strict-dynamic'` and `style-src 'self' 'nonce-…'`. Neither allows `unsafe-inline` or `unsafe-eval` (`unsafe-eval` is allowed in development only). It also sets `frame-ancestors 'none'`, `object-src 'none'` and `base-uri 'self'`. `form-action` allows `'self'` plus the configured SSO providers (Microsoft, Google and any OIDC issuers), because browsers check the redirect to the identity provider after the sign-in form is posted.
+- **Every response** (`next.config.ts`): `Strict-Transport-Security` (2 years, `includeSubDomains; preload`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, a restrictive `Permissions-Policy` and `Cross-Origin-Opener-Policy: same-origin`. The `X-Powered-By` header is removed.
+- Attachment downloads keep their own stricter sandbox CSP.
+- `tests/e2e/security.spec.ts` checks the headers and that interactive pages run with no CSP violations.
+
+> HSTS `preload` is a commitment: only submit `s6a.io` to the browser preload list once every subdomain serves HTTPS.
+
 ## Sessions and rate limiting
 
 - **Idle sign-out:** staff are signed out after 8 hours without activity, and clients after 7 days. A session's `lastSeenAt` is checked and updated on each request, in `src/lib/idle-session.ts`. A dialog warns 5 minutes ahead and offers **Stay signed in**, as WCAG 2.2.1 requires. Change the limits with `STAFF_IDLE_MINUTES` and `CLIENT_IDLE_MINUTES`.
@@ -245,6 +271,9 @@ src/app/(portal)/kb/          knowledge base
 src/app/(portal)/dashboard/   staff dashboard
 src/app/(portal)/team/        client admin: people;  src/app/(portal)/reports/  figures + CSV
 src/app/(portal)/notices/     notice detail;  src/app/(portal)/admin/notices/  publish/update/resolve
+src/lib/monthly-report.ts     monthly figures, tagged PDF, sending;  src/app/api/cron/monthly-reports/
+src/proxy.ts                  nonce-based CSP;  src/lib/security-headers.ts
+assets/fonts/                 fonts embedded in PDFs
 src/app/(portal)/admin/       clients (SLA targets, AI opt-out, contract end), staff, people,
                               articles, saved replies, audit log, retention
 src/app/(public)/             privacy notice, accessibility statement, satisfaction survey

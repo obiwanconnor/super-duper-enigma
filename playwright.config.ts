@@ -28,6 +28,7 @@ export default defineConfig({
     command: `npm run start -- --port ${PORT}`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
+    env: { CRON_SECRET: process.env.CRON_SECRET || "e2e-cron-secret" },
     timeout: 120_000,
   },
 });

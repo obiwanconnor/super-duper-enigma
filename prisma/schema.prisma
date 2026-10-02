@@ -410,3 +410,13 @@ model RateLimit {
   @@id([key, windowStart])
   @@index([windowStart])
 }
+
+// One row per client per month once the summary has been sent, so retries never send twice.
+model MonthlyReportRun {
+  organizationId String
+  month          String // YYYY-MM
+  recipients     Int
+  sentAt         DateTime @default(now())
+
+  @@id([organizationId, month])
+}

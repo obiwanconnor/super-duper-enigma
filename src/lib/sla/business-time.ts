@@ -61,7 +61,21 @@ export function londonTime(year: number, month: number, day: number, minuteOfDay
   return new Date(t);
 }
 
-const isoDate = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+/** Monday–Friday and not an England & Wales bank holiday. */
+export function isWorkingDay(year: number, month: number, day: number): boolean {
+  const weekday = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+  return weekday !== 0 && weekday !== 6 && !holidays().has(isoDate(year, month, day));
+}
+
+/** Day of the month (1–31) of the first working day. */
+export function firstWorkingDay(year: number, month: number): number {
+  for (let d = 1; d <= 31; d++) if (isWorkingDay(year, month, d)) return d;
+  return 1;
+}
+
+function isoDate(y: number, m: number, d: number) {
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
 
 /** Business windows (open/close instants) for each London calendar day in turn, starting at `from`'s day. */
 function* businessWindows(from: Date, maxDays = 3660): Generator<{ open: Date; close: Date }> {

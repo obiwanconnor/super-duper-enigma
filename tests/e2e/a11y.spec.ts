@@ -139,6 +139,8 @@ test.describe("dialogs", () => {
   test("idle warning dialog is accessible", async ({ page }) => {
     await page.clock.install();
     await page.goto("/dashboard");
+    // Let the page hydrate so the idle timer is running before time moves.
+    await page.waitForLoadState("networkidle");
     await page.clock.fastForward("07:56:00");
     await page.clock.runFor(20_000);
     await expect(page.getByRole("alertdialog", { name: "Are you still there?" })).toBeVisible();

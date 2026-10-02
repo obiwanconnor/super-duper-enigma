@@ -4,6 +4,7 @@ export type OutgoingEmail = {
   text: string;
   html: string;
   replyTo?: string;
+  attachments?: { filename: string; contentType: string; content: Buffer }[];
 };
 
 function parseFrom(from: string): { email: string; name?: string } {
@@ -21,7 +22,7 @@ export async function sendEmail(msg: OutgoingEmail): Promise<void> {
 
   if (!apiKey) {
     console.info(
-      `\n--- email (SENDGRID_API_KEY not set) ---\nTo: ${msg.to}\nReply-To: ${msg.replyTo ?? "-"}\nSubject: ${msg.subject}\n\n${msg.text}\n---------------------------------------\n`,
+      `\n--- email (SENDGRID_API_KEY not set) ---\nTo: ${msg.to}\nReply-To: ${msg.replyTo ?? "-"}\nSubject: ${msg.subject}\n${msg.attachments?.length ? `Attachments: ${msg.attachments.map((a) => `${a.filename} (${a.content.length} bytes)`).join(", ")}\n` : ""}\n${msg.text}\n---------------------------------------\n`,
     );
     return;
   }
@@ -38,6 +39,16 @@ export async function sendEmail(msg: OutgoingEmail): Promise<void> {
         { type: "text/plain", value: msg.text },
         { type: "text/html", value: msg.html },
       ],
+      ...(msg.attachments?.length
+        ? {
+            attachments: msg.attachments.map((a) => ({
+              content: a.content.toString("base64"),
+              filename: a.filename,
+              type: a.contentType,
+              disposition: "attachment",
+            })),
+          }
+        : {}),
     }),
   });
 

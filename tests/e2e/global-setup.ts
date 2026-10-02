@@ -19,6 +19,14 @@ export default async function globalSetup() {
       create: { id: "a11y-org", name: "A11y Test Ltd", slug: "a11y-test", emailDomains: ["a11y.example"], contractEndsAt: new Date("2023-01-31") },
       update: { contractEndsAt: new Date("2023-01-31") },
     });
+    // A separate client past its retention period, for the retention page.
+    await db.organization.upsert({
+      where: { slug: "expired-fixture" },
+      create: { name: "Expired Fixture Ltd", slug: "expired-fixture", contractEndsAt: new Date("2023-01-31") },
+      update: {},
+    });
+    // An established client, so monthly summaries exist for past months.
+    await db.organization.update({ where: { id: org.id }, data: { createdAt: new Date("2025-01-01T12:00:00Z"), contractEndsAt: null } });
     const product = await db.product.upsert({
       where: { organizationId_slug: { organizationId: org.id, slug: "test-product" } },
       create: { id: "a11y-product", organizationId: org.id, name: "Test Product", slug: "test-product" },

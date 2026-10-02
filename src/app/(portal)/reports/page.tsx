@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireClientAdmin } from "@/lib/session";
 import { organizationReport, type ReportFigures } from "@/lib/reports";
 import { formatBusinessDuration } from "@/lib/sla/business-time";
+import { availableMonths } from "@/lib/monthly-report";
 
 export const metadata = { title: "Reports" };
 
@@ -17,10 +18,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const days = PERIODS.includes(requested as (typeof PERIODS)[number]) ? requested : 30;
   const since = new Date(Date.now() - days * 24 * 60 * 60_000);
   const [org, report] = await Promise.all([
-    db.organization.findUniqueOrThrow({ where: { id: admin.organizationId }, select: { name: true } }),
+    db.organization.findUniqueOrThrow({ where: { id: admin.organizationId }, select: { name: true, createdAt: true } }),
     organizationReport(admin.organizationId, since),
   ]);
   const o = report.overall;
+  const months = availableMonths(org.createdAt);
 
   return (
     <div className="space-y-8">
@@ -84,6 +86,28 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section aria-labelledby="monthly-heading" className="card p-5">
+        <h2 id="monthly-heading" className="mb-1 font-semibold">
+          Monthly summaries
+        </h2>
+        <p className="mb-3 text-sm text-slate-600">
+          An accessible PDF summary is emailed to your organisation&apos;s admins on the first working day of each month. Download past months here.
+        </p>
+        {months.length === 0 ? (
+          <p className="text-sm text-slate-600">Your first summary will be available after your first full month.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-2">
+            {months.map((m) => (
+              <li key={m.key}>
+                <a href={`/reports/monthly/${m.key}`} className="btn-secondary py-1.5" download aria-label={`Download summary for ${m.label} (PDF)`}>
+                  {m.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-labelledby="export-heading" className="card p-5">

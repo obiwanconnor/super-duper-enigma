@@ -116,6 +116,8 @@ test.describe("sessions and limits", () => {
     const page = await ctx.newPage();
     await page.clock.install();
     await page.goto("/dashboard");
+    // Let the page hydrate so the idle timer is running before time moves.
+    await page.waitForLoadState("networkidle");
     await page.clock.fastForward("07:56:00");
     await page.clock.runFor(20_000);
     const dialog = page.getByRole("alertdialog", { name: "Are you still there?" });
@@ -135,5 +137,54 @@ test.describe("sessions and limits", () => {
     }
     await expect(page).toHaveURL(/error=rate-limited/);
     await expect(page.getByRole("main").getByRole("alert")).toContainText("Too many sign-in attempts");
+  });
+});
+
+test.describe("monthly summaries", () => {
+  test("client admin downloads a tagged PDF summary", async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: path.join(AUTH, "client.json") });
+    const page = await ctx.newPage();
+    await page.goto("/reports");
+    const section = page.getByRole("region", { name: "Monthly summaries" });
+    const first = section.getByRole("link").first();
+    await expect(first).toHaveAccessibleName(/Download summary for .+ \(PDF\)/);
+    const [download] = await Promise.all([page.waitForEvent("download"), first.click()]);
+    const pdf = readFileSync((await download.path())!);
+    const head = pdf.subarray(0, 8).toString("latin1");
+    expect(head.startsWith("%PDF-1.7")).toBe(true);
+    const raw = pdf.toString("latin1");
+    expect(raw).toContain("/StructTreeRoot");
+    expect(raw).toContain("/Lang (en-GB)");
+    expect(raw).toMatch(/\/Marked true/);
+    expect(raw).toMatch(/\/FontFile2/); // embedded font
+    await ctx.close();
+  });
+
+  test("clients without the admin role can't download summaries", async ({ browser }) => {
+    const db = new PrismaClient();
+    await db.user.update({ where: { id: fixtures().clientId }, data: { orgAdmin: false } });
+    const ctx = await browser.newContext({ storageState: path.join(AUTH, "client.json") });
+    expect((await ctx.request.get("/reports/monthly/2026-09")).status()).toBe(404);
+    await db.user.update({ where: { id: fixtures().clientId }, data: { orgAdmin: true } });
+    await ctx.close();
+    await db.$disconnect();
+  });
+
+  test("the monthly job sends once, with the PDF attached, to client admins and s6a admins", async ({ request }) => {
+    const db = new PrismaClient();
+    await db.monthlyReportRun.deleteMany({ where: { organizationId: fixtures().orgId } });
+    const auth = { Authorization: `Bearer ${process.env.CRON_SECRET || "e2e-cron-secret"}` };
+
+    expect((await request.get("/api/cron/monthly-reports?force=1")).status()).toBe(401);
+    const first = await (await request.get("/api/cron/monthly-reports?force=1", { headers: auth })).json();
+    const mine = first.results.find((r: { organizationId: string }) => r.organizationId === fixtures().orgId);
+    expect(mine.sent).toBeGreaterThanOrEqual(2); // the client admin plus at least one s6a admin
+
+    const again = await (await request.get("/api/cron/monthly-reports?force=1", { headers: auth })).json();
+    expect(again.results.find((r: { organizationId: string }) => r.organizationId === fixtures().orgId).skipped).toBe("already-sent");
+
+    const run = await db.monthlyReportRun.findFirst({ where: { organizationId: fixtures().orgId } });
+    expect(run?.recipients).toBeGreaterThanOrEqual(2);
+    await db.$disconnect();
   });
 });

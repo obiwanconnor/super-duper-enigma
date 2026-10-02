@@ -11,6 +11,7 @@ import { addProduct, inviteClientUser, setOrgAdmin, setUserActive, updateOrganiz
 import { aiConfigured } from "@/lib/ai/assistant";
 import { PRIORITIES, targetsFor } from "@/lib/sla/sla";
 import { priorityLabels } from "@/lib/labels";
+import { availableMonths } from "@/lib/monthly-report";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const org = await db.organization.findUnique({ where: { id: (await params).id }, select: { name: true } });
@@ -224,6 +225,26 @@ export default async function OrganizationPage({
               </div>
               <SubmitButton className="btn-secondary">Add product</SubmitButton>
             </form>
+          </section>
+
+          <section aria-labelledby="monthly-heading" className="card p-5">
+            <h2 id="monthly-heading" className="mb-1 font-semibold">
+              Monthly summaries
+            </h2>
+            <p className="mb-3 text-xs text-slate-600">Emailed to this client&apos;s admins and all s6a admins on the first working day of each month.</p>
+            {availableMonths(org.createdAt, new Date(), 6).length === 0 ? (
+              <p className="text-sm text-slate-600">Available after the client&apos;s first full month.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {availableMonths(org.createdAt, new Date(), 6).map((m) => (
+                  <li key={m.key}>
+                    <a href={`/reports/monthly/${m.key}?org=${org.id}`} className="btn-secondary py-1.5" download aria-label={`Download ${org.name} summary for ${m.label} (PDF)`}>
+                      {m.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="card p-5">

@@ -93,3 +93,17 @@ describe("csv export", () => {
     expect(toCsv(["a", "b"], [[1, "x\ny"]])).toBe('﻿a,b\r\n1,"x\ny"\r\n');
   });
 });
+
+import { buildCsp } from "@/lib/security-headers";
+
+describe("content security policy", () => {
+  it("uses a nonce, blocks framing and allows SSO redirects", () => {
+    const csp = buildCsp("abc123", { formActions: ["https://login.microsoftonline.com"] });
+    expect(csp).toContain("script-src 'self' 'nonce-abc123' 'strict-dynamic'");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toContain("unsafe-inline");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("form-action 'self' https://login.microsoftonline.com");
+    expect(buildCsp("x", { dev: true })).toContain("'unsafe-eval'");
+  });
+});

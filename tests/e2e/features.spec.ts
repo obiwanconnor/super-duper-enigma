@@ -122,7 +122,7 @@ test.describe("staff features", () => {
 
   test("contract end date is saved and audited", async ({ page }) => {
     await page.goto(`/admin/organizations/${fixtures().orgId}`);
-    await page.getByLabel("Contract end date").fill("2023-01-31");
+    await page.getByLabel("Contract end date").fill("2030-01-31");
     await page.getByRole("button", { name: "Save settings" }).click();
     await expect(page.getByRole("status")).toContainText("Settings saved");
   });

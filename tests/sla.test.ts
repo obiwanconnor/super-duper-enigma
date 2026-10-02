@@ -193,3 +193,50 @@ describe("notice date inputs", () => {
     expect(parseLondonDateTime("nonsense")).toBeNull();
   });
 });
+
+import { firstWorkingDay } from "@/lib/sla/business-time";
+import { availableMonths, isMonthlyReportDay, monthRange, parseMonth, previousMonth, summaryRows } from "@/lib/monthly-report";
+
+describe("monthly summaries", () => {
+  it("finds the first working day, skipping weekends and bank holidays", () => {
+    expect(firstWorkingDay(2026, 12)).toBe(1); // Tue 1 Dec
+    expect(firstWorkingDay(2026, 8)).toBe(3); // Sat 1 Aug -> Mon 3
+    expect(firstWorkingDay(2027, 1)).toBe(4); // Fri 1 Jan is a bank holiday -> Mon 4
+    expect(isMonthlyReportDay(new Date("2027-01-04T09:00:00Z"))).toBe(true);
+    expect(isMonthlyReportDay(new Date("2027-01-01T09:00:00Z"))).toBe(false);
+  });
+
+  it("uses UK-time month boundaries", () => {
+    const sep = monthRange(2026, 9); // BST
+    expect(sep.from.toISOString()).toBe("2026-08-31T23:00:00.000Z");
+    expect(sep.to.toISOString()).toBe("2026-09-30T23:00:00.000Z");
+    const dec = monthRange(2026, 12); // GMT, rolls into next year
+    expect(dec.to.toISOString()).toBe("2027-01-01T00:00:00.000Z");
+    expect(previousMonth(2027, 1)).toEqual({ year: 2026, month: 12 });
+  });
+
+  it("parses month keys and lists available months", () => {
+    expect(parseMonth("2026-09")).toEqual({ year: 2026, month: 9 });
+    expect(parseMonth("2026-13")).toBeNull();
+    expect(parseMonth("../etc")).toBeNull();
+    const months = availableMonths(new Date("2026-07-15T12:00:00Z"), new Date("2026-10-02T12:00:00Z"));
+    expect(months.map((m) => m.key)).toEqual(["2026-09", "2026-08", "2026-07"]);
+    expect(months[0].label).toBe("September 2026");
+  });
+
+  it("describes empty months plainly", () => {
+    const rows = summaryRows({
+      created: 0,
+      resolved: 0,
+      open: 0,
+      medianFirstResponse: null,
+      firstResponseWithinTarget: null,
+      medianResolution: null,
+      resolvedWithinTarget: null,
+      ratedGood: null,
+      ratings: 0,
+    });
+    expect(rows).toContainEqual(["Median first response", "No data"]);
+    expect(rows).toContainEqual(["Rated good", "No ratings"]);
+  });
+});

@@ -8,6 +8,7 @@ import type { Role } from "@prisma/client";
 import { db } from "./db";
 import { sendEmail } from "./email/send";
 import { magicLinkEmail } from "./email/templates";
+import { LIMITS, rateLimit } from "./rate-limit";
 import { getOidcProviders, oidcProviderId } from "./oidc-providers";
 import {
   decideSignIn,
@@ -25,6 +26,7 @@ declare module "next-auth" {
       id: string;
       role: Role;
       organizationId: string | null;
+      orgAdmin: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -76,6 +78,9 @@ function buildProviders(): Provider[] {
       from: process.env.EMAIL_FROM,
       maxAge: 15 * 60,
       async sendVerificationRequest({ identifier, url }) {
+        // Also enforced here so posting straight to the Auth.js endpoint can't bypass it.
+        const limit = await rateLimit(`verify:email:${normaliseEmail(identifier)}`, LIMITS.signInPerEmail);
+        if (!limit.allowed) throw new Error("Too many sign-in links requested");
         await sendEmail({ to: identifier, ...magicLinkEmail(url) });
       },
     }),
@@ -131,7 +136,8 @@ function buildProviders(): Provider[] {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
-  session: { strategy: "database" },
+  // Absolute cap; shorter idle limits per role are enforced in src/lib/idle-session.ts.
+  session: { strategy: "database", maxAge: 7 * 24 * 60 * 60 },
   providers: buildProviders(),
   trustHost: true,
   pages: {
@@ -153,10 +159,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return decision.ok ? true : `/login?error=${decision.reason}`;
     },
     async session({ session, user }) {
-      const u = user as unknown as { id: string; role: Role; organizationId: string | null };
+      const u = user as unknown as { id: string; role: Role; organizationId: string | null; orgAdmin: boolean };
       session.user.id = u.id;
       session.user.role = u.role;
       session.user.organizationId = u.organizationId;
+      session.user.orgAdmin = u.orgAdmin;
       return session;
     },
   },

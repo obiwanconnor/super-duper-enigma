@@ -5,6 +5,7 @@ import { OPEN_STATUSES } from "@/lib/labels";
 import { loadTargets, slaFor } from "@/lib/sla/targets";
 import { notifySlaBreach } from "@/lib/notifications";
 import { aiConfigured, runTriage } from "@/lib/ai/assistant";
+import { pruneRateLimits } from "@/lib/rate-limit";
 
 /**
  * Runs every 15 minutes (vercel.json). Vercel sends
@@ -87,5 +88,6 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked: open.length, alerts, retried });
+  const pruned = await pruneRateLimits(now);
+  return NextResponse.json({ ok: true, checked: open.length, alerts, retried, pruned });
 }

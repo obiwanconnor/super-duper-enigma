@@ -19,3 +19,21 @@ test("capture", async ({ page }, info) => {
     await page.screenshot({ path: `${OUT}/${info.project.name}-${name}.png`, fullPage: true });
   }
 });
+
+test.describe("client screens", () => {
+  test.use({ storageState: path.join(AUTH, "client.json") });
+  test("capture client", async ({ page }, info) => {
+    for (const [name, url] of [
+      ["client-tickets", "/tickets"],
+      ["client-reports", "/reports"],
+    ]) {
+      await page.goto(url);
+      await page.screenshot({ path: `${OUT}/${info.project.name}-${name}.png`, fullPage: true });
+    }
+    await page.clock.install();
+    await page.goto("/tickets");
+    await page.clock.fastForward("167:56:00");
+    await page.clock.runFor(20_000);
+    await page.screenshot({ path: `${OUT}/${info.project.name}-idle.png` });
+  });
+});

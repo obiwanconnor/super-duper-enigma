@@ -9,9 +9,8 @@ import { db } from "@/lib/db";
 import { requireAdmin, requireStaff } from "@/lib/session";
 import { parseDomains, slugify } from "@/lib/slug";
 import { normaliseEmail } from "@/lib/login-policy";
-import { appUrl, brand } from "@/lib/config";
-import { sendEmail } from "@/lib/email/send";
-import { renderEmail } from "@/lib/email/templates";
+import { brand } from "@/lib/config";
+import { sendInvitation } from "@/lib/invitations";
 import { audit, diff } from "@/lib/audit";
 import { eraseUser as eraseUserData } from "@/lib/privacy";
 import { deleteOrganizationData, isPastRetention } from "@/lib/retention";
@@ -172,16 +171,6 @@ const inviteSchema = z.object({
   name: z.string().trim().max(120).optional(),
 });
 
-async function sendInvitation(email: string, inviterName: string) {
-  const url = appUrl(`/login?email=${encodeURIComponent(email)}`);
-  const { text, html } = renderEmail({
-    heading: `You've been invited to ${brand.name}`,
-    bodyText: `${inviterName} has given you access to ${brand.name}, where you can raise support requests, follow their progress and browse help articles.`,
-    action: { label: "Sign in", url },
-  });
-  await sendEmail({ to: email, subject: `Your access to ${brand.name}`, text, html });
-}
-
 export async function inviteClientUser(formData: FormData) {
   const admin = await requireAdmin();
   const organizationId = String(formData.get("organizationId"));
@@ -266,6 +255,23 @@ export async function setStaffRole(formData: FormData) {
     });
   }
   revalidatePath("/admin/staff");
+}
+
+export async function setOrgAdmin(formData: FormData) {
+  const admin = await requireAdmin();
+  const userId = String(formData.get("userId"));
+  const orgAdmin = formData.get("orgAdmin") === "true";
+  const returnTo = String(formData.get("returnTo") ?? "/admin/organizations");
+  const user = await db.user.update({ where: { id: userId, role: "CLIENT" }, data: { orgAdmin } });
+  await audit({
+    actorId: admin.id,
+    action: orgAdmin ? "user.made_client_admin" : "user.removed_client_admin",
+    entityType: "user",
+    entityId: userId,
+    summary: `${orgAdmin ? "Made" : "Removed"} ${user.email} ${orgAdmin ? "a client admin" : "as client admin"}`,
+  });
+  revalidatePath(returnTo);
+  back(returnTo, { notice: orgAdmin ? `${user.name ?? user.email} is now a client admin` : `${user.name ?? user.email} is no longer a client admin` });
 }
 
 /** UK GDPR right to erasure: anonymise the person, keep the ticket history. */

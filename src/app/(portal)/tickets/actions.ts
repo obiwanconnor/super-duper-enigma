@@ -307,3 +307,27 @@ export async function submitTicketSurvey(formData: FormData) {
   const ok = await recordSatisfaction(ticket.id, viewer.id, formData);
   redirect(`${path}?${ok ? "notice=" + encodeURIComponent("Thanks for your feedback") : "error=" + encodeURIComponent("Please choose a rating")}`);
 }
+
+// ---- Known issues -------------------------------------------------------------
+
+/** Links a ticket to a service notice (a duplicate report of a known issue), or unlinks it. */
+export async function linkTicketToNotice(formData: FormData) {
+  const { viewer, ticket } = await loadTicketForViewer(String(formData.get("ticketId")));
+  if (!isStaff(viewer)) notFound();
+  const noticeId = String(formData.get("noticeId") ?? "") || null;
+  if (noticeId) {
+    const notice = await db.serviceNotice.findFirst({ where: { id: noticeId, products: { some: { id: ticket.productId } } } });
+    if (!notice) redirect(`/tickets/${ticket.number}?error=${encodeURIComponent("That notice doesn't cover this ticket's product")}`);
+  }
+  await db.ticket.update({ where: { id: ticket.id }, data: { noticeId } });
+  await audit({
+    actorId: viewer.id,
+    action: noticeId ? "ticket.linked_to_notice" : "ticket.unlinked_from_notice",
+    entityType: "ticket",
+    entityId: ticket.id,
+    summary: noticeId ? `Linked ticket #${ticket.number} to a service notice` : `Unlinked ticket #${ticket.number} from its service notice`,
+    details: { noticeId },
+  });
+  revalidatePath(`/tickets/${ticket.number}`);
+  redirect(`/tickets/${ticket.number}?notice=${encodeURIComponent(noticeId ? "Linked to the known issue" : "Unlinked from the known issue")}`);
+}

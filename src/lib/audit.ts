@@ -8,7 +8,7 @@ import { db } from "./db";
 export async function audit(event: {
   actorId: string | null;
   action: string;
-  entityType: "ticket" | "organization" | "user" | "article" | "canned_response" | "retention";
+  entityType: "ticket" | "organization" | "user" | "article" | "canned_response" | "retention" | "notice";
   entityId: string;
   summary: string;
   details?: Prisma.InputJsonValue;

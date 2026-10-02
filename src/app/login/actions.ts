@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signIn } from "@/lib/auth";
 import { normaliseEmail } from "@/lib/login-policy";
+import { clientIp, LIMITS, rateLimit } from "@/lib/rate-limit";
 
 function safeCallback(raw: FormDataEntryValue | null): string {
   const v = typeof raw === "string" ? raw : "";
@@ -23,6 +24,12 @@ export async function signInWith(formData: FormData) {
   const providerId = String(formData.get("providerId") ?? "");
   const email = normaliseEmail(String(formData.get("email") ?? ""));
   const redirectTo = safeCallback(formData.get("callbackUrl"));
+
+  const perIp = await rateLimit(`signin:ip:${await clientIp()}`, LIMITS.signInPerIp);
+  const perEmail = providerId === "sendgrid" ? await rateLimit(`signin:email:${email}`, LIMITS.signInPerEmail) : { allowed: true };
+  if (!perIp.allowed || !perEmail.allowed) {
+    redirect(`/login?error=rate-limited&email=${encodeURIComponent(email)}`);
+  }
 
   if (providerId === "sendgrid") {
     // Redirect ourselves: the client router doesn't follow Auth.js's extra

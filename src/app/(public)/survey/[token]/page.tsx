@@ -61,7 +61,7 @@ export default async function SurveyPage({
       </p>
       {sp.error && (
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-          Please choose a rating.
+          {sp.error === "rate" ? "Too many submissions for this link. Please try again later." : "Please choose a rating."}
         </p>
       )}
       {ticket.satisfaction && <p>You rated this ticket {ratingLabels[ticket.satisfaction.rating].toLowerCase()}. You can change your rating below.</p>}

@@ -153,3 +153,43 @@ describe("survey tokens", () => {
     expect(parseSurveyToken("nonsense", "secret")).toBeNull();
   });
 });
+
+import { windowStart } from "@/lib/rate-limit";
+
+describe("rate limit windows", () => {
+  it("aligns to fixed windows", () => {
+    expect(windowStart(new Date("2026-10-02T10:07:30Z"), 15 * 60).toISOString()).toBe("2026-10-02T10:00:00.000Z");
+    expect(windowStart(new Date("2026-10-02T10:15:00Z"), 15 * 60).toISOString()).toBe("2026-10-02T10:15:00.000Z");
+  });
+});
+
+import { idleLimitMinutes, isIdle, warningMinutes } from "@/lib/idle";
+
+describe("idle timeouts", () => {
+  it("is 8 hours for staff and 7 days for clients", () => {
+    expect(idleLimitMinutes("AGENT")).toBe(480);
+    expect(idleLimitMinutes("ADMIN")).toBe(480);
+    expect(idleLimitMinutes("CLIENT")).toBe(7 * 24 * 60);
+    const now = new Date("2026-10-02T18:00:00Z");
+    expect(isIdle(new Date("2026-10-02T09:59:00Z"), "AGENT", now)).toBe(true);
+    expect(isIdle(new Date("2026-10-02T10:01:00Z"), "AGENT", now)).toBe(false);
+    expect(isIdle(new Date("2026-10-02T09:59:00Z"), "CLIENT", now)).toBe(false);
+  });
+  it("warns at least a minute ahead, at most five", () => {
+    expect(warningMinutes(480)).toBe(5);
+    expect(warningMinutes(2)).toBe(1);
+  });
+});
+
+import { parseLondonDateTime, toLondonInput } from "@/lib/notices";
+
+describe("notice date inputs", () => {
+  it("round-trips UK local time across DST", () => {
+    const summer = parseLondonDateTime("2026-07-01T22:00")!;
+    expect(summer.toISOString()).toBe("2026-07-01T21:00:00.000Z");
+    expect(toLondonInput(summer)).toBe("2026-07-01T22:00");
+    const winter = parseLondonDateTime("2026-12-01T22:00")!;
+    expect(winter.toISOString()).toBe("2026-12-01T22:00:00.000Z");
+    expect(parseLondonDateTime("nonsense")).toBeNull();
+  });
+});

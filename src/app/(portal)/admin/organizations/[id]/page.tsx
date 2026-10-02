@@ -7,7 +7,7 @@ import { authMethodLabels } from "@/lib/labels";
 import { getOidcProviders } from "@/lib/oidc-providers";
 import { Flash } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
-import { addProduct, inviteClientUser, setUserActive, updateOrganization, updateSlaTargets } from "../../actions";
+import { addProduct, inviteClientUser, setOrgAdmin, setUserActive, updateOrganization, updateSlaTargets } from "../../actions";
 import { aiConfigured } from "@/lib/ai/assistant";
 import { PRIORITIES, targetsFor } from "@/lib/sla/sla";
 import { priorityLabels } from "@/lib/labels";
@@ -236,9 +236,19 @@ export default async function OrganizationPage({
                     <Link href={`/admin/users/${u.id}`} className="font-medium link">
                       {u.name ?? u.email}
                     </Link>
+                    {u.orgAdmin && <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-700">Client admin</span>}
                     {!u.active && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">Inactive</span>}
                     {u.name && <div className="text-slate-600">{u.email}</div>}
                   </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <form action={setOrgAdmin}>
+                    <input type="hidden" name="userId" value={u.id} />
+                    <input type="hidden" name="orgAdmin" value={String(!u.orgAdmin)} />
+                    <input type="hidden" name="returnTo" value={path} />
+                    <button className="btn-link" aria-label={`${u.orgAdmin ? "Remove client admin from" : "Make client admin:"} ${u.name ?? u.email}`}>
+                      {u.orgAdmin ? "Remove admin" : "Make admin"}
+                    </button>
+                  </form>
                   <form action={setUserActive}>
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="hidden" name="active" value={String(!u.active)} />
@@ -247,6 +257,7 @@ export default async function OrganizationPage({
                       {u.active ? "Deactivate" : "Reactivate"}
                     </button>
                   </form>
+                  </div>
                 </li>
               ))}
             </ul>

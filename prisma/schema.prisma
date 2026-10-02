@@ -58,6 +58,16 @@ enum AiStatus {
   FAILED
 }
 
+enum NoticeKind {
+  INCIDENT
+  MAINTENANCE
+}
+
+enum NoticeStatus {
+  ACTIVE
+  RESOLVED
+}
+
 enum SatisfactionRating {
   GOOD
   OKAY
@@ -122,6 +132,7 @@ model Product {
 
   tickets  Ticket[]
   articles Article[]
+  notices  ServiceNotice[]
 
   @@unique([organizationId, slug])
 }
@@ -133,6 +144,8 @@ model User {
   emailVerified  DateTime?
   image          String?
   role           Role          @default(CLIENT)
+  // Client admins manage their own organisation's people and see its reports.
+  orgAdmin       Boolean       @default(false)
   active         Boolean       @default(true)
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -152,6 +165,7 @@ model User {
   satisfaction    SatisfactionResponse[]
   cannedResponses CannedResponse[]
   auditEvents     AuditEvent[]
+  notices         ServiceNotice[]
 }
 
 model Ticket {
@@ -196,6 +210,9 @@ model Ticket {
   drafts       AiDraft[]
   watchers     TicketWatcher[]
   satisfaction SatisfactionResponse?
+  // Linked to a known incident when it's a duplicate report.
+  noticeId     String?
+  notice       ServiceNotice?        @relation(fields: [noticeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
   @@index([aiStatus])
@@ -296,6 +313,8 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
+  // Last request made with this session; drives the idle timeout.
+  lastSeenAt   DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -360,4 +379,34 @@ model AuditEvent {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// Outage or planned maintenance affecting one or more products.
+model ServiceNotice {
+  id          String       @id @default(cuid())
+  kind        NoticeKind
+  status      NoticeStatus @default(ACTIVE)
+  title       String
+  body        String
+  startsAt    DateTime     @default(now())
+  endsAt      DateTime?
+  resolvedAt  DateTime?
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  products    Product[]
+  tickets     Ticket[]
+
+  @@index([status])
+}
+
+// Fixed-window counters for rate limiting (see src/lib/rate-limit.ts).
+model RateLimit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
 }

@@ -81,3 +81,15 @@ describe("retention", () => {
     expect(isPastRetention(null)).toBe(false);
   });
 });
+
+import { csvCell, toCsv } from "@/lib/csv";
+
+describe("csv export", () => {
+  it("quotes and neutralises formulas", () => {
+    expect(csvCell('He said "hi", then left')).toBe('"He said ""hi"", then left"');
+    expect(csvCell("=HYPERLINK(\"x\")")).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(csvCell("-1")).toBe("'-1");
+    expect(csvCell(null)).toBe("");
+    expect(toCsv(["a", "b"], [[1, "x\ny"]])).toBe('﻿a,b\r\n1,"x\ny"\r\n');
+  });
+});

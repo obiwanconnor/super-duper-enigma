@@ -16,12 +16,15 @@ const fixtures = () =>
     orgId: string;
     clientId: string;
     surveyToken: string;
+    noticeId: string;
   };
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 
-async function expectAccessible(page: Page) {
-  const results = await new AxeBuilder({ page: page as never }).withTags(WCAG_TAGS).analyze();
+async function expectAccessible(page: Page, include?: string, opts: { modal?: boolean } = {}) {
+  const builder = new AxeBuilder({ page: page as never }).withTags(WCAG_TAGS);
+  if (include) builder.include(include);
+  const results = await builder.analyze();
   const summary = results.violations.map((v) => ({
     rule: v.id,
     impact: v.impact,
@@ -34,7 +37,9 @@ async function expectAccessible(page: Page) {
     .filter((r) => r.id === "color-contrast")
     .flatMap((r) => r.nodes.map((n) => `${n.target.join(" ")}: ${n.any[0]?.message ?? ""}`))
     // Decorative glyphs (e.g. a hidden arrow) have no text to measure.
-    .filter((m) => !m.includes("only non-text characters"));
+    .filter((m) => !m.includes("only non-text characters"))
+    // A modal overlaps the page by design; its own colours are explicit (text-slate-900 on bg-white).
+    .filter((m) => !(opts.modal && m.includes("partially overlaps")));
   expect(unresolved, `Unresolved contrast checks on ${page.url()}`).toEqual([]);
 }
 
@@ -45,7 +50,7 @@ async function visit(page: Page, url: string) {
 }
 
 test.describe("signed out", () => {
-  for (const url of ["/login", "/login?email=casey%40a11y.example", "/login?error=not-invited", "/login/check-email", "/privacy", "/accessibility"]) {
+  for (const url of ["/login", "/login?email=casey%40a11y.example", "/login?error=not-invited", "/login/check-email", "/login?error=timeout", "/privacy", "/accessibility"]) {
     test(`page ${url}`, async ({ page }) => {
       await visit(page, url);
       await expectAccessible(page);
@@ -68,10 +73,22 @@ test.describe("client", () => {
 
   const pages = () => {
     const f = fixtures();
-    return ["/tickets", "/tickets?view=all", "/tickets/new", `/tickets/${f.openTicket}`, `/tickets/${f.resolvedTicket}`, "/kb", "/kb/a11y-exporting-reports"];
+    return [
+      "/tickets",
+      "/tickets?view=all",
+      "/tickets/new",
+      `/tickets/${f.openTicket}`,
+      `/tickets/${f.resolvedTicket}`,
+      "/kb",
+      "/kb/a11y-exporting-reports",
+      "/team",
+      "/reports",
+      "/reports?days=365",
+      `/notices/${f.noticeId}`,
+    ];
   };
 
-  for (const i of [0, 1, 2, 3, 4, 5, 6]) {
+  for (const i of [...Array(11).keys()]) {
     test(`client page ${i}`, async ({ page }) => {
       const url = pages()[i];
       await visit(page, url);
@@ -100,14 +117,32 @@ test.describe("staff", () => {
       `/admin/users/${f.clientId}`,
       "/admin/audit",
       "/admin/retention",
+      "/admin/notices",
+      "/admin/notices/new",
+      `/admin/notices/${f.noticeId}`,
+      `/notices/${f.noticeId}`,
     ];
   };
 
-  for (const i of [...Array(14).keys()]) {
+  for (const i of [...Array(18).keys()]) {
     test(`staff page ${i}`, async ({ page }) => {
       const url = pages()[i];
       await visit(page, url);
       await expectAccessible(page);
     });
   }
+});
+
+test.describe("dialogs", () => {
+  test.use({ storageState: path.join(AUTH, "admin.json") });
+
+  test("idle warning dialog is accessible", async ({ page }) => {
+    await page.clock.install();
+    await page.goto("/dashboard");
+    await page.clock.fastForward("07:56:00");
+    await page.clock.runFor(20_000);
+    await expect(page.getByRole("alertdialog", { name: "Are you still there?" })).toBeVisible();
+    // Content behind the modal backdrop is inert, so scan the dialog itself.
+    await expectAccessible(page, "dialog", { modal: true });
+  });
 });

@@ -31,8 +31,8 @@ export default async function globalSetup() {
     });
     const client = await db.user.upsert({
       where: { email: "casey@a11y.example" },
-      create: { id: "a11yclient", email: "casey@a11y.example", name: "Casey Client", organizationId: org.id },
-      update: { active: true, organizationId: org.id },
+      create: { id: "a11yclient", email: "casey@a11y.example", name: "Casey Client", organizationId: org.id, orgAdmin: true },
+      update: { active: true, organizationId: org.id, orgAdmin: true },
     });
     await db.user.upsert({
       where: { email: "colin@a11y.example" },
@@ -107,6 +107,20 @@ export default async function globalSetup() {
       await db.cannedResponse.create({ data: { title: "Thanks, investigating", body: "Hi {{requester_first_name}},\n\nThanks — we're investigating.", createdById: admin.id } });
     }
 
+    const notice = await db.serviceNotice.upsert({
+      where: { id: "a11y-notice" },
+      create: {
+        id: "a11y-notice",
+        kind: "INCIDENT",
+        title: "Report exports failing",
+        body: "Exports of more than 90 days are failing. **Workaround:** export in smaller ranges.",
+        createdById: admin.id,
+        products: { connect: [{ id: product.id }] },
+      },
+      update: { status: "ACTIVE", resolvedAt: null },
+    });
+    await db.ticket.update({ where: { id: openTicket.id }, data: { noticeId: notice.id } });
+
     const expires = new Date(Date.now() + day);
     await mkdir(AUTH_DIR, { recursive: true });
     for (const [name, user] of [
@@ -114,7 +128,11 @@ export default async function globalSetup() {
       ["client", client],
     ] as const) {
       const sessionToken = `a11y-session-${name}`;
-      await db.session.upsert({ where: { sessionToken }, create: { sessionToken, userId: user.id, expires }, update: { expires } });
+      await db.session.upsert({
+        where: { sessionToken },
+        create: { sessionToken, userId: user.id, expires },
+        update: { expires, lastSeenAt: new Date() },
+      });
       await writeFile(
         path.join(AUTH_DIR, `${name}.json`),
         JSON.stringify({
@@ -133,6 +151,8 @@ export default async function globalSetup() {
         resolvedTicket: resolvedTicket.number,
         orgId: org.id,
         clientId: client.id,
+        adminId: admin.id,
+        noticeId: notice.id,
         surveyToken: surveyToken(resolvedTicket.number, client.id, process.env.AUTH_SECRET ?? ""),
       }),
     );

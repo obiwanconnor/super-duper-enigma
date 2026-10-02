@@ -21,6 +21,7 @@ import {
   addWatcher,
   clientSetStatus,
   discardDraft,
+  linkTicketToNotice,
   postComment,
   regenerateDraft,
   removeWatcher,
@@ -62,6 +63,7 @@ export default async function TicketPage({
       attachments: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, contentType: true, size: true, commentId: true } },
       watchers: { include: { user: { select: { id: true, name: true, email: true } } }, orderBy: { createdAt: "asc" } },
       satisfaction: true,
+      notice: { select: { id: true, title: true, status: true, kind: true } },
       // AI drafts are for staff eyes only; never load them for clients.
       drafts: staff ? { where: { status: "PENDING" }, orderBy: { createdAt: "desc" }, take: 1 } : false,
     },
@@ -69,7 +71,7 @@ export default async function TicketPage({
   if (!ticket || !canViewTicket(viewer, ticket)) notFound();
 
   const draft = ticket.drafts?.[0];
-  const [agents, targets, articles, canned, colleagues] = await Promise.all([
+  const [agents, targets, articles, canned, colleagues, activeNotices] = await Promise.all([
     staff
       ? db.user.findMany({ where: { role: { in: ["AGENT", "ADMIN"] }, active: true }, orderBy: { name: "asc" }, select: { id: true, name: true, email: true } })
       : [],
@@ -81,6 +83,9 @@ export default async function TicketPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, email: true },
     }),
+    staff
+      ? db.serviceNotice.findMany({ where: { status: "ACTIVE", products: { some: { id: ticket.productId } } }, orderBy: { startsAt: "desc" }, select: { id: true, title: true } })
+      : [],
   ]);
 
   const sla = staff ? slaFor(ticket, targets) : null;
@@ -117,6 +122,21 @@ export default async function TicketPage({
         </div>
 
         <Flash {...flash} />
+
+        {ticket.notice && (
+          <section aria-labelledby="known-issue-heading" className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <h2 id="known-issue-heading" className="font-semibold">
+              {ticket.notice.status === "ACTIVE" ? "Part of a known issue" : "Part of a resolved issue"}
+            </h2>
+            <p className="mt-1">
+              {staff ? "Linked to" : "This ticket is related to"}{" "}
+              <Link href={`/notices/${ticket.notice.id}`} className="link">
+                {ticket.notice.title}
+              </Link>
+              .{!staff && ticket.notice.status === "ACTIVE" && " We'll post updates there and on this ticket."}
+            </p>
+          </section>
+        )}
 
         {staff && <AiPanel ticket={ticket} />}
 
@@ -384,6 +404,29 @@ export default async function TicketPage({
                 </SubmitButton>
               </form>
             </section>
+            {(activeNotices.length > 0 || ticket.notice) && (
+              <section aria-labelledby="notice-link-heading" className="card p-5 text-sm">
+                <h2 id="notice-link-heading" className="mb-2 font-semibold">
+                  Known issue
+                </h2>
+                <form action={linkTicketToNotice} className="space-y-2">
+                  <input type="hidden" name="ticketId" value={ticket.id} />
+                  <label htmlFor="notice-link" className="label">
+                    Link to service notice
+                  </label>
+                  <select id="notice-link" name="noticeId" defaultValue={ticket.notice?.id ?? ""} className="input">
+                    <option value="">Not linked</option>
+                    {ticket.notice && !activeNotices.some((n) => n.id === ticket.notice!.id) && <option value={ticket.notice.id}>{ticket.notice.title}</option>}
+                    {activeNotices.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.title}
+                      </option>
+                    ))}
+                  </select>
+                  <SubmitButton className="btn-secondary w-full">Save link</SubmitButton>
+                </form>
+              </section>
+            )}
             {ticket.satisfaction && (
               <section aria-labelledby="csat-heading" className="card p-5 text-sm">
                 <h2 id="csat-heading" className="mb-1 font-semibold">

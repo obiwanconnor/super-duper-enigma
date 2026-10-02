@@ -7,7 +7,7 @@ import { Time } from "@/components/time";
 export const metadata = { title: "Audit log" };
 
 const PAGE_SIZE = 50;
-const TYPES = { "": "All changes", ticket: "Tickets", organization: "Clients", user: "People", article: "Articles", canned_response: "Saved replies", retention: "Retention" } as const;
+const TYPES = { "": "All changes", ticket: "Tickets", organization: "Clients", user: "People", article: "Articles", canned_response: "Saved replies", notice: "Service notices", retention: "Retention" } as const;
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ type?: string; page?: string }> }) {
   await requireAdmin();

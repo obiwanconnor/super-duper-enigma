@@ -30,7 +30,7 @@ test.describe("keyboard", () => {
     await page.getByLabel("Product").focus();
     await page.keyboard.press("ArrowDown");
     await page.getByLabel("Summary").fill("Keyboard-only test ticket");
-    await page.getByLabel("Details").fill("Raised without using a mouse to check keyboard access.");
+    await page.getByLabel("Details", { exact: true }).fill("Raised without using a mouse to check keyboard access.");
     await page.getByRole("button", { name: "Submit ticket" }).focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/tickets\/\d+$/);

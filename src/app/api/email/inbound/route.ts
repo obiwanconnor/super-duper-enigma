@@ -7,6 +7,7 @@ import { extractEmailAddress, extractReplyText } from "@/lib/email/parse-reply";
 import { addComment } from "@/lib/tickets";
 import { notifyCommentAdded } from "@/lib/notifications";
 import { runReplyDraft } from "@/lib/ai/assistant";
+import { LIMITS, rateLimit } from "@/lib/rate-limit";
 import { MAX_FILES, sanitiseFilename, saveAttachments, type IncomingFile } from "@/lib/attachments";
 
 /**
@@ -96,6 +97,10 @@ export async function POST(req: Request) {
   // The address was issued to this user; also require the mail to come from them.
   if (!user || !user.active || sender !== user.email) {
     return NextResponse.json({ ok: true, ignored: "sender-mismatch" });
+  }
+
+  if (!(await rateLimit(`inbound:${user.id}`, LIMITS.inboundPerSender)).allowed) {
+    return NextResponse.json({ ok: true, ignored: "rate-limited" });
   }
 
   const ticket = await db.ticket.findUnique({ where: { number: token.ticketNumber } });

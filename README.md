@@ -12,6 +12,9 @@ A support portal for the software built by s6a. Client stakeholders raise and fo
 - **Staff dashboard**: queue health, response times against SLA, satisfaction, and monthly volumes per client.
 - **Client conveniences**: service targets shown on each ticket, a Good / Okay / Poor satisfaction survey, and copying in colleagues.
 - **Saved replies** for staff, with placeholders such as the requester's first name.
+- **Client admins**: named people at each client manage their own colleagues and see their organisation's reports, with CSV export.
+- **Service notices**: incident and maintenance notices per product, shown as a banner and emailed to affected clients, with duplicate tickets linked to them.
+- **Security**: idle sign-out (staff after 8 hours, clients after 7 days, with a warning) and rate limiting on sign-in, inbound email and surveys.
 - **Accessible**: built and tested to WCAG 2.2 AA, with light and dark appearance.
 - **UK GDPR tooling**: a privacy notice, an audit log, personal data export, erasure, and retention review.
 
@@ -22,6 +25,7 @@ Stack: Next.js 16 (App Router, server actions), TypeScript, Auth.js v5, Prisma 6
 | Role | Who | Can |
 |---|---|---|
 | `CLIENT` | Stakeholder at a client | See all tickets for their organisation, raise and reply to tickets, mark them resolved or reopen them, read their products' articles |
+| `CLIENT` + client admin | Named stakeholder(s), set by s6a admins | As above, plus invite and deactivate colleagues (**Team**) and see their organisation's figures and CSV export (**Reports**) |
 | `AGENT` | s6a support staff | Everything across all clients: assign, change status and priority, add internal notes, write articles |
 | `ADMIN` | s6a admin | As agent, plus manage client organisations, products, SLA targets, client users and staff |
 | `AI` | The AI assistant (system user) | Posts clarifying questions; can never sign in |
@@ -158,6 +162,38 @@ The accessibility statement is at `/accessibility`. Update its dates whenever yo
 - **Copy in colleagues:** the requester, their colleagues or staff can copy in other people from the same client organisation, either when raising the ticket or later. Copied-in people get the same emails and can reply by email.
 - **Saved replies** (staff, under **Saved replies**): templates inserted into any reply or AI draft at the cursor. Placeholders `{{requester_first_name}}`, `{{client_name}}`, `{{ticket_number}}` and `{{agent_name}}` are filled in automatically.
 
+## Client admins
+
+On a client's settings page, s6a admins use **Make admin** to give named people the client admin role. Client admins get two extra pages:
+
+- **Team:** invite colleagues and deactivate or reactivate them. Invitations are limited to the client's email domains, and client admins can't deactivate themselves or make other admins. Ask s6a for that.
+- **Reports:** for the last 30 days, 90 days or 12 months:
+  - tickets raised, resolved and open
+  - median first response and resolution times, and the share within target
+  - the satisfaction rating
+  - all of the above broken down by product, with a **CSV download** of the tickets. Cells that start with `=`, `+`, `-` or `@` get a leading apostrophe, so a ticket subject can't run as a spreadsheet formula.
+
+Changes and downloads are recorded in the audit log.
+
+## Service notices
+
+Any staff member can post an **incident** or **planned maintenance** notice under **Notices**. A notice can cover several products and record start and expected end times in UK time.
+
+- Clients whose products are affected see a banner on every page, with a link to the notice's own page. Ongoing incidents show straight away; maintenance shows from 7 days before it starts.
+- Publishing, updating and resolving each optionally email every active person at the affected clients.
+- On a ticket, staff can link it to an active notice for that product as a duplicate report. The client then sees "Part of a known issue" with a link.
+
+## Sessions and rate limiting
+
+- **Idle sign-out:** staff are signed out after 8 hours without activity, and clients after 7 days. A session's `lastSeenAt` is checked and updated on each request, in `src/lib/idle-session.ts`. A dialog warns 5 minutes ahead and offers **Stay signed in**, as WCAG 2.2.1 requires. Change the limits with `STAFF_IDLE_MINUTES` and `CLIENT_IDLE_MINUTES`.
+- **Rate limits** (`src/lib/rate-limit.ts`): fixed-window counters held in Postgres, so they work across serverless instances without Redis. The limits are:
+  - 5 sign-in links per email address per 15 minutes, enforced in the login action and again when the email is sent, so posting directly to the Auth.js endpoint is covered too
+  - 30 sign-in attempts per IP address per 15 minutes
+  - 30 inbound emails per sender per hour
+  - 10 survey submissions per link per hour
+
+  Old counters are pruned by the scheduled job.
+
 ## Single sign-on
 
 Each client organisation's settings page (**Clients → organisation**) sets:
@@ -207,6 +243,8 @@ src/app/login/                email-first login page
 src/app/(portal)/tickets/     ticket list, new ticket, ticket detail, server actions
 src/app/(portal)/kb/          knowledge base
 src/app/(portal)/dashboard/   staff dashboard
+src/app/(portal)/team/        client admin: people;  src/app/(portal)/reports/  figures + CSV
+src/app/(portal)/notices/     notice detail;  src/app/(portal)/admin/notices/  publish/update/resolve
 src/app/(portal)/admin/       clients (SLA targets, AI opt-out, contract end), staff, people,
                               articles, saved replies, audit log, retention
 src/app/(public)/             privacy notice, accessibility statement, satisfaction survey

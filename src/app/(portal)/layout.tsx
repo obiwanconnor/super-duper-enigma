@@ -7,6 +7,9 @@ import { db } from "@/lib/db";
 import { NavLinks } from "@/components/nav-links";
 import { SiteFooter } from "@/components/site-footer";
 import { SkipLink } from "@/components/skip-link";
+import { IdleWatcher } from "@/components/idle-watcher";
+import { NoticeBanner } from "@/components/notice-banner";
+import { idleLimitMinutes, warningMinutes } from "@/lib/idle";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -23,10 +26,17 @@ export default async function PortalLayout({ children }: { children: React.React
     ...(isStaff(viewer) ? [{ href: "/dashboard", label: "Dashboard" }] : []),
     { href: "/tickets", label: "Tickets" },
     { href: "/kb", label: "Knowledge base" },
+    ...(viewer.role === "CLIENT" && viewer.orgAdmin
+      ? [
+          { href: "/team", label: "Team" },
+          { href: "/reports", label: "Reports" },
+        ]
+      : []),
     ...(isStaff(viewer)
       ? [
           { href: "/admin/articles", label: "Articles" },
           { href: "/admin/canned", label: "Saved replies" },
+          { href: "/admin/notices", label: "Notices" },
         ]
       : []),
     ...(isAdmin(viewer)
@@ -64,10 +74,12 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
       </header>
+      <NoticeBanner viewer={viewer} />
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 focus:outline-none">
         {children}
       </main>
       <SiteFooter signedIn />
+      <IdleWatcher limitMinutes={idleLimitMinutes(viewer.role)} warnMinutes={warningMinutes(idleLimitMinutes(viewer.role))} signOutAction={logout} />
     </div>
   );
 }

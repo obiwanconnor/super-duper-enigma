@@ -5,11 +5,13 @@ import { db } from "@/lib/db";
 import { canViewTicket } from "@/lib/access";
 import { parseSurveyToken } from "@/lib/survey";
 import { recordSatisfaction } from "@/lib/satisfaction";
+import { LIMITS, rateLimit } from "@/lib/rate-limit";
 
 export async function submitSurvey(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   const parsed = parseSurveyToken(token, process.env.AUTH_SECRET ?? "");
   if (!parsed) redirect(`/survey/${encodeURIComponent(token)}`);
+  if (!(await rateLimit(`survey:${token}`, LIMITS.surveyPerToken)).allowed) redirect(`/survey/${token}?error=rate`);
 
   const [ticket, user] = await Promise.all([
     db.ticket.findUnique({ where: { number: parsed.ticketNumber } }),
